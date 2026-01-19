@@ -1,6 +1,8 @@
 # MARTOVER - 火星农业科幻叙事交互体验
 
 🚀 **MARTOVER火星农业计划** - 一个结合火星陨石坑探索与土豆培育的沉浸式3D Web科幻叙事应用
+本项目由阿里云ESA提供加速、计算和保护
+<img width="7534" height="844" alt="image" src="https://github.com/user-attachments/assets/d2c3f82e-a6e1-4331-8c77-d9212c1ee8af" />
 
 ## 🌟 项目概述
 
