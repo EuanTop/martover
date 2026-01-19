@@ -6,6 +6,7 @@
 <img width="7534" height="844" alt="image" src="https://github.com/user-attachments/assets/d2c3f82e-a6e1-4331-8c77-d9212c1ee8af" />
 
 ## 🌟 项目概述
+<img width="2954" height="1772" alt="CleanShot 2026-01-19 at 20 24 16@2x" src="https://github.com/user-attachments/assets/e12364e6-60d0-4825-a548-d4faaec2a449" />
 
 MARTOVER是一个创新的Web科幻叙事交互体验，模拟未来人类在火星上进行农业开发的场景。用户作为"TOVER联盟第101号成员"，将参与火星农业时代核心项目的全流程：
 
