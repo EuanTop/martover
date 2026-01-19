@@ -1,0 +1,39 @@
+/* 自定义光标系统 */
+.cursor-container {
+    position: fixed;
+    pointer-events: none;
+    z-index: 9999;
+    transition: opacity 0.3s;
+  }
+  
+  /* 默认状态 */
+  .cursor-container .cursor-ring {
+    width: 16px;
+    height: 16px;
+    background-color: #ffffff;
+    /* border: 2px solid rgba(255, 255, 255, 0.8); */
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    transition: all 0.3s ease-out;
+  }
+  
+  /* 悬停状态 */
+  .cursor-container.hover .cursor-ring {
+    transform: translate(-50%, -50%) scale(1);
+    width: 52px;  /* 根据实际设计调整 */
+    height: 52px;
+    background: url('tover-icon.svg') center/contain no-repeat; /* SVG推荐方案 */
+    background-color: transparent; /* 移除原背景色 */
+    animation: tover-pulse 0.8s infinite; /* 可选动画效果 */
+  }
+  
+  @keyframes tover-pulse {
+    0% { transform: translate(-50%, -50%) scale(1); }
+    50% { transform: translate(-50%, -50%) scale(1.2); }
+    100% { transform: translate(-50%, -50%) scale(1); }
+  }
+  
+  /* 点击状态 */
+  .cursor-container:active .cursor-ring {
+    transform: translate(-50%, -50%) scale(0.8);
+  }

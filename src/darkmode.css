@@ -1,0 +1,147 @@
+/* 统一的DarkMode样式 */
+
+/* 全局DarkMode变量 */
+:root {
+  --dark-bg-primary: #000000;
+  --dark-bg-secondary: #111111;
+  --dark-bg-tertiary: #1a1a1a;
+  --dark-surface: rgba(17, 17, 17, 0.8);
+  --dark-surface-elevated: rgba(26, 26, 26, 0.9);
+  
+  --dark-text-primary: #ffffff;
+  --dark-text-secondary: rgba(255, 165, 0, 0.9);
+  --dark-text-muted: rgba(255, 165, 0, 0.6);
+  
+  --dark-border: rgba(255, 165, 0, 0.3);
+  --dark-border-hover: rgba(255, 165, 0, 0.5);
+  
+  --dark-accent: #ff6b35;
+  --dark-accent-hover: #ff8c42;
+  --dark-accent-glow: rgba(255, 107, 53, 0.4);
+  
+  --dark-shadow: rgba(0, 0, 0, 0.8);
+  --dark-shadow-glow: rgba(255, 165, 0, 0.2);
+}
+
+/* DarkMode下的通用样式 */
+.dark-mode {
+  background: var(--dark-bg-primary);
+  color: var(--dark-text-primary);
+}
+
+.dark-mode .card {
+  background: var(--dark-surface);
+  border: 1px solid var(--dark-border);
+  box-shadow: 0 4px 20px var(--dark-shadow), 0 0 20px var(--dark-shadow-glow);
+}
+
+.dark-mode .card:hover {
+  border-color: var(--dark-border-hover);
+  box-shadow: 0 8px 30px var(--dark-shadow), 0 0 30px var(--dark-shadow-glow);
+}
+
+.dark-mode .input {
+  background: var(--dark-surface);
+  border: 1px solid var(--dark-border);
+  color: var(--dark-text-primary);
+}
+
+.dark-mode .input:focus {
+  border-color: var(--dark-accent);
+  box-shadow: 0 0 0 2px var(--dark-accent-glow);
+}
+
+.dark-mode .input::placeholder {
+  color: var(--dark-text-muted);
+}
+
+/* 科幻风格的发光效果 */
+.dark-mode .glow-text {
+  text-shadow: 0 0 10px var(--dark-accent-glow);
+}
+
+.dark-mode .glow-border {
+  box-shadow: 0 0 15px var(--dark-accent-glow);
+}
+
+.dark-mode .glow-button {
+  box-shadow: 0 0 20px var(--dark-accent-glow);
+  transition: all 0.3s ease;
+}
+
+.dark-mode .glow-button:hover {
+  box-shadow: 0 0 30px var(--dark-accent-glow), 0 0 50px rgba(255, 165, 0, 0.1);
+  transform: translateY(-2px);
+}
+
+/* 滚动条样式 */
+.dark-mode ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.dark-mode ::-webkit-scrollbar-track {
+  background: var(--dark-bg-secondary);
+}
+
+.dark-mode ::-webkit-scrollbar-thumb {
+  background: var(--dark-accent);
+  border-radius: 4px;
+}
+
+.dark-mode ::-webkit-scrollbar-thumb:hover {
+  background: var(--dark-accent-hover);
+}
+
+/* 动画效果 */
+@keyframes dark-pulse {
+  0% { 
+    opacity: 0.6; 
+    box-shadow: 0 0 5px var(--dark-accent-glow); 
+  }
+  50% { 
+    opacity: 1; 
+    box-shadow: 0 0 20px var(--dark-accent-glow); 
+  }
+  100% { 
+    opacity: 0.6; 
+    box-shadow: 0 0 5px var(--dark-accent-glow); 
+  }
+}
+
+@keyframes dark-glow {
+  0% { 
+    box-shadow: 0 0 10px var(--dark-accent-glow); 
+  }
+  50% { 
+    box-shadow: 0 0 25px var(--dark-accent-glow), 0 0 40px rgba(255, 165, 0, 0.1); 
+  }
+  100% { 
+    box-shadow: 0 0 10px var(--dark-accent-glow); 
+  }
+}
+
+.dark-mode .pulse-animation {
+  animation: dark-pulse 2s infinite;
+}
+
+.dark-mode .glow-animation {
+  animation: dark-glow 3s infinite;
+}
+
+/* 特殊组件样式 */
+.dark-mode .progress-bar {
+  background: var(--dark-surface);
+  border: 1px solid var(--dark-border);
+}
+
+.dark-mode .modal-overlay {
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(10px);
+}
+
+.dark-mode .glass-effect {
+  background: rgba(17, 17, 17, 0.4);
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--dark-border);
+}

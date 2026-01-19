@@ -1,0 +1,66 @@
+/* RdOverlay.css */
+@keyframes silverGradient {
+  0% {
+    background-position: 0% 0%;
+  }
+  50% {
+    background-position: 100% 100%;
+  }
+  100% {
+    background-position: 0% 0%;
+  }
+}
+
+@keyframes subtleOpacity {
+  0% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 0.6;
+  }
+  100% {
+    opacity: 0.3;
+  }
+}
+
+/* Fallback animations in case GSAP doesn't initialize properly */
+.absolute.inset-0 {
+  animation: silverGradient 10s infinite ease-in-out;
+}
+
+/* Ensure SVG text displays properly */
+svg text {
+  font-family: Arial, Helvetica, sans-serif;
+  font-weight: bold;
+}
+
+/* Add subtle animation for the RD text elements if GSAP is not available */
+@keyframes subtleRdPulse {
+  0% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0.6;
+  }
+}
+
+/* Apply to direct SVG text elements */
+svg text {
+  animation: subtleRdPulse 6s infinite ease-in-out;
+}
+
+/* Stagger the animations slightly for a more natural effect */
+svg text:nth-child(odd) {
+  animation-delay: 1s;
+}
+
+svg text:nth-child(3n) {
+  animation-delay: 2s;
+}
+
+svg text:nth-child(5n) {
+  animation-delay: 3s;
+}

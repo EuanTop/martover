@@ -1,0 +1,79 @@
+@import './darkmode.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  margin: 0;
+  /* font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Robscoto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif; */
+  font-family: 'LovedHei', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: #FF722C;
+  cursor: none !important;
+}
+
+body::-webkit-scrollbar {
+  display: none; /* Chrome, Safari and Opera */
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+
+@font-face {
+  font-family: 'LovedHei';
+  src: local('LovedHei'), url(/fonts/爱点风雅黑.ttf) format('truetype');
+}
+
+@font-face {
+  font-family: 'Balgin';
+  src: url(/fonts/Balgin-Extra-Light.ttf) format('truetype');
+  font-weight: 200;
+}
+
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
+    monospace;
+}
+
+button, a, [role="button"], .icon-hover-target {
+  cursor: none !important; /* 覆盖原有cursor:pointer */
+}
+
+/* 在文档2中增加状态同步 */
+.cursor-container.icon-hover {
+  opacity: 0; /* 当需要完全隐藏时 */
+}
+
+/* 修改悬停状态 */
+.cursor-container.hover .cursor-ring {
+  transform: translate(-50%, -50%) scale(1);
+  width: 64px;  /* 根据实际设计调整 */
+  height: 64px;
+  background: url('./Components/CustomCursor/tover-icon.svg') center/contain no-repeat; /* SVG推荐方案 */
+  background-color: transparent; /* 移除原背景色 */
+  animation: tover-pulse 0.8s infinite; /* 可选动画效果 */
+}
+
+@keyframes tover-pulse {
+  0% { transform: translate(-50%, -50%) scale(1); }
+  50% { transform: translate(-50%, -50%) scale(1.2); }
+  100% { transform: translate(-50%, -50%) scale(1); }
+}
+
+@keyframes fadeInOut {
+  0% { opacity: 0.3; }
+  50% { opacity: 1; }
+  100% { opacity: 0.3; }
+}
+
+@keyframes pulse {
+  0% { opacity: 0.6; box-shadow: 0 0 5px #FF732C; }
+  50% { opacity: 1; box-shadow: 0 0 15px #FF732C; }
+  100% { opacity: 0.6; box-shadow: 0 0 5px #FF732C; }
+}
+
+
+
