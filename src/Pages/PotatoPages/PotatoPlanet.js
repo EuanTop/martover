@@ -960,33 +960,48 @@ function handleConfirm() {
                     right: '5%',
                     transform: 'translateY(-50%)',
                     width: '40%',
+                    maxHeight: '80vh',
                     color: '#000',
                     fontFamily: 'Inter, sans-serif',
                     textAlign: 'left',
                     zIndex: 1000,
-                    pointerEvents: 'none',
-                    opacity: mriTextOpacity, // 使用渐显透明度
-                    transition: 'opacity 0.3s ease-out'
+                    pointerEvents: 'auto',
+                    opacity: mriTextOpacity,
+                    transition: 'opacity 0.3s ease-out',
+                    display: 'flex',
+                    flexDirection: 'column',
                 }}>
-                    <h1 style={{ fontSize: '2.5rem', fontWeight: 'bold', marginBottom: '1rem', lineHeight: '1.1' }}>
-                        {displayPotatoes[currentIndex].specialParam}
-                    </h1>
-                    <h2 style={{ fontSize: '1.2rem', fontWeight: '300', marginBottom: '2rem', opacity: 0.8 }}>
-                        {displayPotatoes[currentIndex].specialParamEn}
-                    </h2>
-                    
-                    <div style={{ borderTop: `2px solid rgba(0,0,0,${mriTextOpacity})`, paddingTop: '1.5rem' }}>
-                        <p style={{ fontSize: '0.9rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>DETAILS</p>
-                        <p style={{ fontSize: '1.1rem', marginBottom: '1.5rem' }}>
-                            {displayPotatoes[currentIndex].specialParamDetails}
-                        </p>
+                    {/* 标题区域 - 固定不滚动 */}
+                    <div style={{ flexShrink: 0 }}>
+                        <h1 style={{ fontSize: '2.5rem', fontWeight: 'bold', marginBottom: '1rem', lineHeight: '1.1' }}>
+                            {displayPotatoes[currentIndex].specialParam}
+                        </h1>
+                        <h2 style={{ fontSize: '1.2rem', fontWeight: '300', marginBottom: '1.5rem', opacity: 0.8 }}>
+                            {displayPotatoes[currentIndex].specialParamEn}
+                        </h2>
                     </div>
                     
-                    <div style={{ marginTop: '1rem' }}>
-                        <p style={{ fontSize: '0.9rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>DESCRIPTION</p>
-                        <p style={{ fontSize: '1rem', lineHeight: '1.6', opacity: 0.9 }}>
-                            {displayPotatoes[currentIndex].englishDescription}
-                        </p>
+                    {/* 内容区域 - 可滚动 */}
+                    <div style={{
+                        flex: 1,
+                        overflowY: 'auto',
+                        borderTop: `2px solid rgba(0,0,0,${mriTextOpacity})`,
+                        paddingTop: '1.5rem',
+                        paddingRight: '8px',
+                    }}>
+                        <div style={{ marginBottom: '1.5rem' }}>
+                            <p style={{ fontSize: '0.9rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>DETAILS</p>
+                            <p style={{ fontSize: '1.1rem' }}>
+                                {displayPotatoes[currentIndex].specialParamDetails}
+                            </p>
+                        </div>
+                        
+                        <div>
+                            <p style={{ fontSize: '0.9rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>DESCRIPTION</p>
+                            <p style={{ fontSize: '1rem', lineHeight: '1.6', opacity: 0.9 }}>
+                                {displayPotatoes[currentIndex].englishDescription}
+                            </p>
+                        </div>
                     </div>
                 </div>
             )}
