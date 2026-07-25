@@ -5,10 +5,9 @@ import { VIEW_MODES } from '../simulation/breedingSimulation';
 import { getCraterWorldRadius } from './craterVisualModel';
 import { MARS_RADIUS, getCraterWorldVector } from './worldCoordinates';
 
-const HUMAN_TARGET = new THREE.Vector3(3.55, 0.88, 0);
-const HUMAN_CAMERA = new THREE.Vector3(5.05, 1.3, 2.25);
-
 const smoothStep = (value) => value * value * (3 - 2 * value);
+const PLANET_FOV = 75;
+const CRATER_FOV = 56;
 
 const getCraterCamera = (crater) => {
   // The crater scene is attached just above the unit Mars sphere. Aim at that
@@ -25,29 +24,17 @@ const getCraterCamera = (crater) => {
   tangent.normalize();
   const bitangent = normal.clone().cross(tangent).normalize();
   const craterRadius = getCraterWorldRadius(crater);
-  const cameraDistance = THREE.MathUtils.clamp(
-    craterRadius * 3.7,
-    0.25,
-    0.32
-  );
-  const surfaceOffset = THREE.MathUtils.clamp(
-    craterRadius * 3.5,
-    0.22,
-    0.31
-  );
-  const lookTarget = target
-    .clone()
-    .add(tangent.clone().multiplyScalar(surfaceOffset * 0.18))
-    .add(bitangent.clone().multiplyScalar(surfaceOffset * 0.06));
+  const cameraHeight = craterRadius * 2.35;
+  const obliqueOffset = craterRadius * 1.95;
 
   return {
+    fov: CRATER_FOV,
     target,
-    lookTarget,
     position: target
       .clone()
-      .add(normal.clone().multiplyScalar(cameraDistance))
-      .add(tangent.clone().multiplyScalar(surfaceOffset))
-      .add(bitangent.clone().multiplyScalar(surfaceOffset * 0.2)),
+      .add(normal.clone().multiplyScalar(cameraHeight))
+      .add(tangent.clone().multiplyScalar(obliqueOffset))
+      .add(bitangent.clone().multiplyScalar(obliqueOffset * 0.18)),
   };
 };
 
@@ -62,15 +49,14 @@ const WorldCameraRig = ({ controlsRef, viewMode, selectedCrater }) => {
 
     let destination = null;
 
-    if (viewMode === VIEW_MODES.CRATER && selectedCrater) {
+    if (
+      (viewMode === VIEW_MODES.CRATER || viewMode === VIEW_MODES.HUMAN)
+      && selectedCrater
+    ) {
       destination = getCraterCamera(selectedCrater);
-    } else if (viewMode === VIEW_MODES.HUMAN) {
-      destination = {
-        target: HUMAN_TARGET.clone(),
-        position: HUMAN_CAMERA.clone(),
-      };
     } else if (viewMode === VIEW_MODES.PLANET) {
       destination = {
+        fov: PLANET_FOV,
         target: new THREE.Vector3(0, 0, 0),
         position: camera.position.clone().normalize().multiplyScalar(5.2),
       };
@@ -81,12 +67,16 @@ const WorldCameraRig = ({ controlsRef, viewMode, selectedCrater }) => {
 
     transitionRef.current = {
       elapsed: 0,
-      duration: viewMode === VIEW_MODES.HUMAN ? 1.8 : 1.35,
+      duration: viewMode === VIEW_MODES.HUMAN ? 0.55 : 1.35,
       fromPosition: camera.position.clone(),
       fromTarget: controls.target.clone(),
+      fromFov: camera.fov,
       toPosition: destination.position,
-      toTarget: destination.lookTarget || destination.target,
+      toTarget: destination.target,
+      toFov: destination.fov,
     };
+    camera.near = 0.01;
+    camera.updateProjectionMatrix();
     controls.enabled = false;
   }, [camera, controlsRef, selectedCrater, viewMode]);
 
@@ -112,6 +102,12 @@ const WorldCameraRig = ({ controlsRef, viewMode, selectedCrater }) => {
       transition.toTarget,
       progress
     );
+    camera.fov = THREE.MathUtils.lerp(
+      transition.fromFov,
+      transition.toFov,
+      progress
+    );
+    camera.updateProjectionMatrix();
     camera.lookAt(controls.target);
     controls.update();
 

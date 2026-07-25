@@ -12,7 +12,6 @@ const MarsComponent = ({
   hideMarsModel = false,
   viewMode,
   simulation,
-  human,
   selectedTuberUse,
   selectedIntervention,
   onPlantInZone,
@@ -185,7 +184,6 @@ const MarsComponent = ({
         hideMarsModel={hideMarsModel}
         viewMode={viewMode}
         simulation={simulation}
-        human={human}
         selectedTuberUse={selectedTuberUse}
         selectedIntervention={selectedIntervention}
         onPlantInZone={onPlantInZone}

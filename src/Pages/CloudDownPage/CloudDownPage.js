@@ -323,7 +323,13 @@ const TimestampDisplay = ({ isDarkMode }) => {
             />
           )}
 
-          <Canvas className={styles.gameCanvas}>
+          <Canvas
+            className={`${styles.gameCanvas} ${
+              viewMode === VIEW_MODES.HUMAN
+                ? styles.gameCanvasWithHuman
+                : ''
+            }`}
+          >
             <Suspense fallback={null}>
               {/* 这里改进条件逻辑 */}
               {(!showMars || isTransitioning) && (
@@ -344,7 +350,6 @@ const TimestampDisplay = ({ isDarkMode }) => {
                 hideMarsModel={hideMarsModel}
                 viewMode={viewMode}
                 simulation={simulation}
-                human={human}
                 selectedTuberUse={selectedTuberUse}
                 selectedIntervention={selectedIntervention}
                 onPlantInZone={onPlantInZone}

@@ -6,7 +6,6 @@ import * as THREE from 'three';
 import  { useCursorStore } from '../../store'
 import CraterCultivationScene from '../../game/world/CraterCultivationScene';
 import CraterViewEffects from '../../game/world/CraterViewEffects';
-import HumanOrbitalLab from '../../game/world/HumanOrbitalLab';
 import WorldCameraRig from '../../game/world/WorldCameraRig';
 import { calculateCraterPosition } from '../../game/world/worldCoordinates';
 import { VIEW_MODES } from '../../game/simulation/breedingSimulation';
@@ -372,7 +371,6 @@ const MarsGlobe = ({
   hideMarsModel = false,
   viewMode = VIEW_MODES.PLANET,
   simulation,
-  human,
   selectedTuberUse,
   selectedIntervention,
   onPlantInZone,
@@ -381,6 +379,9 @@ const MarsGlobe = ({
 }) => {
   const [selectedId, setSelectedId] = useState(null);
   const controlsRef = useRef();
+  const isCloseView = (
+    viewMode === VIEW_MODES.CRATER || viewMode === VIEW_MODES.HUMAN
+  );
   const planetControlsEnabled = (
     isInteractive && viewMode === VIEW_MODES.PLANET
   );
@@ -404,10 +405,10 @@ const MarsGlobe = ({
 
   return (
     <>
-      <ambientLight intensity={viewMode === VIEW_MODES.CRATER ? 1.35 : 3} />
+      <ambientLight intensity={isCloseView ? 1.35 : 3} />
       <pointLight
         position={[10, 10, 10]}
-        intensity={viewMode === VIEW_MODES.CRATER ? 0.55 : 1}
+        intensity={isCloseView ? 0.55 : 1}
       />
       <Mars 
         craters={craters} 
@@ -421,7 +422,12 @@ const MarsGlobe = ({
         hideMarsModel={hideMarsModel}
         viewMode={viewMode}
       >
-        {selectedCrater && simulation && viewMode === VIEW_MODES.CRATER && (
+        {selectedCrater
+          && simulation
+          && (
+            viewMode === VIEW_MODES.CRATER
+            || viewMode === VIEW_MODES.HUMAN
+          ) && (
           <CraterCultivationScene
             crater={selectedCrater}
             simulation={simulation}
@@ -433,12 +439,6 @@ const MarsGlobe = ({
           />
         )}
       </Mars>
-      {human && (
-        <HumanOrbitalLab
-          human={human}
-          visible={viewMode === VIEW_MODES.HUMAN}
-        />
-      )}
       <WorldCameraRig
         controlsRef={controlsRef}
         viewMode={viewMode}
@@ -455,7 +455,7 @@ const MarsGlobe = ({
         dampingFactor={0.075}
         enableDamping
       />
-      {viewMode === VIEW_MODES.CRATER && (
+      {isCloseView && (
         <EffectComposer
           multisampling={4}
           enableNormalPass={false}

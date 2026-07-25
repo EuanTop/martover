@@ -22,6 +22,7 @@ import {
   TUBER_USES,
   VIEW_MODES,
 } from '../simulation/breedingSimulation';
+import HumanFeedbackPanel from './HumanFeedbackPanel';
 import styles from './GameHUD.module.css';
 
 const useOptions = Object.freeze([
@@ -273,46 +274,9 @@ const AllocationHUD = ({
         disabled={!canFeedHuman(simulation)}
         onClick={onFeedHuman}
       >
-        送往轨道医疗舱
+        进入人体反馈
       </button>
     </>
-  );
-};
-
-const HumanHUD = ({ human, generation, onNextGeneration }) => {
-  const response = human.lastResponse;
-
-  return (
-    <div className={styles.humanResponse}>
-      <div className={styles.humanNarrative}>
-        <span>第 {generation} 代 · 人体反馈</span>
-        <strong>{response?.sensation}</strong>
-        <p>{response?.benefit}</p>
-        <small>代价：{response?.cost}</small>
-      </div>
-      <div className={styles.humanMetrics}>
-        <div>
-          <span>预计寿命</span>
-          <strong>{human.lifespanYears}</strong>
-          <small>年</small>
-        </div>
-        <div>
-          <span>组织修复</span>
-          <strong>{human.tissueRepair}</strong>
-        </div>
-        <div>
-          <span>神经清晰</span>
-          <strong>{human.neuralClarity}</strong>
-        </div>
-      </div>
-      <button
-        type="button"
-        className={styles.primaryAction}
-        onClick={onNextGeneration}
-      >
-        带着留种返回火星
-      </button>
-    </div>
   );
 };
 
@@ -338,7 +302,7 @@ const GameHUD = ({
   if (viewMode === VIEW_MODES.HUMAN) {
     return (
       <div className={`${styles.hud} ${styles.humanHud}`}>
-        <HumanHUD
+        <HumanFeedbackPanel
           human={human}
           generation={generation}
           onNextGeneration={onNextGeneration}

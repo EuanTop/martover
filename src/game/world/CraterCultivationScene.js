@@ -1466,6 +1466,7 @@ const CraterCultivationScene = ({
   const isPlanting = simulation.stage === BREEDING_STAGES.PLANTING;
   const isGrowing = simulation.stage === BREEDING_STAGES.GROWING;
   const isAllocation = simulation.stage === BREEDING_STAGES.ALLOCATION;
+  const isComplete = simulation.stage === BREEDING_STAGES.COMPLETE;
 
   useEffect(() => () => {
     terrainGeometry.dispose();
@@ -1505,16 +1506,20 @@ const CraterCultivationScene = ({
         />
       ))}
 
-      {isGrowing && (
+      {(isGrowing || isComplete) && (
         <>
           <GrowthPatch simulation={simulation} seed={seed} />
-          <InterventionTarget
-            zone={simulation.zone}
-            seed={seed}
-            selectedIntervention={selectedIntervention}
-            onApplyIntervention={onApplyIntervention}
-          />
-          <InterventionSignal simulation={simulation} seed={seed} />
+          {isGrowing && (
+            <>
+              <InterventionTarget
+                zone={simulation.zone}
+                seed={seed}
+                selectedIntervention={selectedIntervention}
+                onApplyIntervention={onApplyIntervention}
+              />
+              <InterventionSignal simulation={simulation} seed={seed} />
+            </>
+          )}
         </>
       )}
 

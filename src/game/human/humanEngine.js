@@ -19,6 +19,8 @@ export const createHumanState = () => ({
 
 const RESPONSE_LIBRARY = Object.freeze({
   repair: {
+    bodyRegion: 'chest',
+    bodyLabel: '胸腔与受损组织',
     sensation: '胸腔先出现短暂灼热，随后旧伤附近的疼痛像被逐层调低。',
     benefit: '组织修复速度提高，细胞开始记住受损前的结构。',
     cost: '修复冲动不会自动停止，长期食用可能形成过度增生。',
@@ -31,6 +33,8 @@ const RESPONSE_LIBRARY = Object.freeze({
     },
   },
   dormancy: {
+    bodyRegion: 'torso',
+    bodyLabel: '心肺与代谢系统',
     sensation: '心率缓慢下降，皮肤温度降低，但意识仍保持清醒。',
     benefit: '代谢进入可控休眠，预计寿命被显著拉长。',
     cost: '醒来后的数分钟里，近期记忆会出现轻微断层。',
@@ -43,6 +47,8 @@ const RESPONSE_LIBRARY = Object.freeze({
     },
   },
   conductivity: {
+    bodyRegion: 'neural',
+    bodyLabel: '神经与末梢',
     sensation: '舌尖出现微弱金属味，随后四肢动作比意念更早半拍完成。',
     benefit: '神经信号传递更清晰，精细动作和反应速度提高。',
     cost: '强电磁环境会诱发无法主动压制的手指震颤。',
@@ -55,6 +61,8 @@ const RESPONSE_LIBRARY = Object.freeze({
     },
   },
   orientation: {
+    bodyRegion: 'head',
+    bodyLabel: '前庭与空间感知',
     sensation: '闭上眼后，身体仍能感到火星地平线和重力方向。',
     benefit: '前庭系统形成内部导航感，失重环境中的定向能力提高。',
     cost: '接近大型旋转设备时，身体会同时感到两个互相冲突的方向。',
@@ -75,6 +83,12 @@ export const applyHumanFeeding = (human, harvestResult) => {
   const potency = clamp(harvestResult.expression / 100, 0.25, 1);
   const stability = clamp(harvestResult.stability / 100, 0.2, 1);
   const scaleDelta = (value) => Math.round(value * potency * (value < 0 ? 1 : stability));
+  const appliedDelta = Object.fromEntries(
+    Object.entries(response.delta).map(([key, value]) => [
+      key,
+      scaleDelta(value),
+    ])
+  );
   const adaptation = {
     generation: harvestResult.generation,
     trait: harvestResult.dominantTrait,
@@ -86,24 +100,24 @@ export const applyHumanFeeding = (human, harvestResult) => {
   return {
     ...human,
     responseState: HUMAN_RESPONSE_STATES.ADAPTED,
-    vitality: clamp(human.vitality + scaleDelta(response.delta.vitality), 0, 100),
+    vitality: clamp(human.vitality + appliedDelta.vitality, 0, 100),
     lifespanYears: clamp(
-      human.lifespanYears + scaleDelta(response.delta.lifespanYears),
+      human.lifespanYears + appliedDelta.lifespanYears,
       0,
       180
     ),
     neuralClarity: clamp(
-      human.neuralClarity + scaleDelta(response.delta.neuralClarity),
+      human.neuralClarity + appliedDelta.neuralClarity,
       0,
       100
     ),
     tissueRepair: clamp(
-      human.tissueRepair + scaleDelta(response.delta.tissueRepair),
+      human.tissueRepair + appliedDelta.tissueRepair,
       0,
       100
     ),
     metabolicLoad: clamp(
-      human.metabolicLoad + scaleDelta(response.delta.metabolicLoad),
+      human.metabolicLoad + appliedDelta.metabolicLoad,
       0,
       100
     ),
@@ -113,6 +127,7 @@ export const applyHumanFeeding = (human, harvestResult) => {
       trait: harvestResult.dominantTrait,
       potency: Math.round(potency * 100),
       stability: harvestResult.stability,
+      appliedDelta,
     },
   };
 };

@@ -15,6 +15,8 @@ describe('humanEngine', () => {
     expect(adapted.lifespanYears).toBeGreaterThan(baseline.lifespanYears);
     expect(adapted.lastResponse.sensation).toBeTruthy();
     expect(adapted.lastResponse.cost).toBeTruthy();
+    expect(adapted.lastResponse.bodyRegion).toBe('torso');
+    expect(adapted.lastResponse.appliedDelta.lifespanYears).toBeGreaterThan(0);
     expect(adapted.adaptations).toHaveLength(1);
   });
 });
