@@ -10,6 +10,12 @@ const MarsComponent = ({
   setSelectedCrater,
   craterData,
   hideMarsModel = false,
+  viewMode,
+  simulation,
+  human,
+  selectedTuberUse,
+  onPlantInZone,
+  onAssignTuber,
   onFinishedRendering // 添加渲染完成的回调函数
 }) => {
   const marsRef = useRef();
@@ -164,12 +170,23 @@ const MarsComponent = ({
         isInteractive={showMars && hasFinishedMoving && !isTransitioning}
         initialPosition={[0, 0, 0]}
         scale={[2, 2, 2]}
-        showLines={showMars && hasFinishedMoving && !isTransitioning}
+        showLines={
+          showMars
+          && hasFinishedMoving
+          && !isTransitioning
+          && viewMode === 'planet'
+        }
         isDarkMode={isDarkMode}
         selectedCrater={selectedCrater}
         setSelectedCrater={setSelectedCrater}
         craters={showMars && hasFinishedMoving && !isTransitioning ? craterData : []}
         hideMarsModel={hideMarsModel}
+        viewMode={viewMode}
+        simulation={simulation}
+        human={human}
+        selectedTuberUse={selectedTuberUse}
+        onPlantInZone={onPlantInZone}
+        onAssignTuber={onAssignTuber}
       />
     </animated.group>
   );

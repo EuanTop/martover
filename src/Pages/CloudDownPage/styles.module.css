@@ -5,6 +5,11 @@
   overflow: hidden;
 }
 
+.gameCanvas {
+  pointer-events: auto !important;
+  touch-action: none;
+}
+
 .exploreButton {
   position: fixed;
   top: 40%;

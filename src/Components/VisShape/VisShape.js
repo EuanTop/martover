@@ -403,7 +403,6 @@ const VisShape = ({
                   }}
                   className="w-full h-full"
                   wrapper="div"
-                  wrapperClassName="w-full h-full"
                 />
               </div>
 

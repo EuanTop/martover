@@ -198,6 +198,14 @@ mars-craters/
 
 本项目采用 GNU General Public License v3.0 许可证 - 查看 [LICENSE](./LICENSE) 文件了解详情
 
+### Human model attribution
+
+“Basic Human Male” by DNC44
+
+https://sketchfab.com/3d-models/basic-human-male-598d1d1866df48f999fabadb017429d1
+
+Licensed under CC-BY-4.0.
+
 ## 📬 联系方式
 
 - 📧 邮箱: euan@mail.bnu.edu.cn

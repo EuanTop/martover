@@ -39,18 +39,21 @@ const AppRoutes = () => {
   const {
     phase,
     progressStep,
+    viewMode,
     selectedCrater,
-    planting,
+    simulation,
+    human,
+    generation,
+    lineage,
     selectCrater,
     clearCrater,
     beginBreeding,
-    configurePlanting,
-    startPlanting,
-    advancePlanting,
-    chooseIntervention,
-    harvestPlanting,
-    updateAllocation,
-    completeBreeding,
+    plantInZone,
+    applyIntervention,
+    harvest,
+    assignTuber,
+    feedHuman,
+    startNextGeneration,
   } = useGameSession();
 
   // 显示加载状态
@@ -79,19 +82,20 @@ const AppRoutes = () => {
                 selectedCrater={selectedCrater}
                 onCraterSelect={selectCrater}
                 onCraterClear={clearCrater}
-                gamePhase={phase}
                 progressStep={progressStep}
-                planting={planting}
+                viewMode={viewMode}
+                simulation={simulation}
+                human={human}
+                generation={generation}
+                lineage={lineage}
                 onBeginBreeding={beginBreeding}
-                onConfigurePlanting={configurePlanting}
-                onStartPlanting={startPlanting}
-                onAdvancePlanting={advancePlanting}
-                onChooseIntervention={chooseIntervention}
-                onHarvestPlanting={harvestPlanting}
-                onUpdateAllocation={updateAllocation}
-                onCompleteBreeding={completeBreeding}
+                onPlantInZone={plantInZone}
+                onApplyIntervention={applyIntervention}
+                onHarvest={harvest}
+                onAssignTuber={assignTuber}
+                onFeedHuman={feedHuman}
+                onNextGeneration={startNextGeneration}
                 craterData={craterData?.available || []}
-                potatoData={potatoData}
                 appReady={appReady} 
               />
             </>

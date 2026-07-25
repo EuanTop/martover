@@ -1,0 +1,9 @@
+.progressBar {
+  top: 24px;
+}
+
+@media (max-width: 540px) {
+  .progressBar {
+    top: 72px;
+  }
+}

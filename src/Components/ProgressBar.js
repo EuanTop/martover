@@ -1,4 +1,5 @@
 import React from 'react';
+import styles from './ProgressBar.module.css';
 
 const steps = [
   "农业目标地选择",
@@ -26,43 +27,36 @@ export const progressNodeStyle = {
 };
 
 export default function ProgressBar({ currentStep = 0, isDarkMode = false }) {
-  const nodeCount = steps.length;
   const nodeSize = 32;
-  const containerWidth = 420;
   const containerHeight = 60;
   const lineTop = containerHeight / 4;
   const leftOffset = nodeSize / 2;
   const rightOffset = nodeSize / 2;
-  const lineWidth = containerWidth - leftOffset - rightOffset;
-
-  // 节点横向分布
-  const nodePositions = [
-    leftOffset,
-    containerWidth / 2,
-    containerWidth - rightOffset
-  ];
 
   return (
-    <div style={{
+    <div className={styles.progressBar} style={{
       position: 'fixed',
-      top: 24,
       left: '50%',
       transform: 'translateX(-50%)',
       zIndex: 100,
-      width: containerWidth,
+      width: 'min(420px, calc(100vw - 24px))',
       height: containerHeight,
       pointerEvents: 'none',
       background: 'none',
       padding: 0,
       boxShadow: 'none',
       borderRadius: 0,
+      display: 'grid',
+      gridTemplateColumns: `repeat(${steps.length}, minmax(0, 1fr))`,
+      gridTemplateRows: `${nodeSize}px 1fr`,
+      rowGap: 6,
     }}>
       {/* 贯穿线 */}
       <div style={{
         position: 'absolute',
         top: lineTop,
         left: leftOffset,
-        width: lineWidth,
+        right: rightOffset,
         height: 6,
         background: DARK_ORANGE,
         borderRadius: 3,
@@ -75,13 +69,14 @@ export default function ProgressBar({ currentStep = 0, isDarkMode = false }) {
         const isCurrent = idx + 1 === currentStep;
         return (
           <div key={label} style={{
-            position: 'absolute',
-            left: nodePositions[idx] - nodeSize / 2,
-            top: lineTop - nodeSize / 2,
-            display: 'flex',
-            flexDirection: 'column',
+            gridColumn: idx + 1,
+            gridRow: '1 / 3',
+            display: 'grid',
+            gridTemplateRows: `${nodeSize}px 1fr`,
+            rowGap: 6,
             alignItems: 'center',
-            width: nodeSize,
+            justifyItems: 'center',
+            minWidth: 0,
             zIndex: 2,
           }}>
             <div style={{
@@ -93,7 +88,6 @@ export default function ProgressBar({ currentStep = 0, isDarkMode = false }) {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              marginBottom: 6,
               boxSizing: 'border-box',
               boxShadow: isDarkMode && isCurrent ? '0 0 15px rgba(255, 165, 0, 0.6)' : 'none',
             }}>
@@ -109,11 +103,10 @@ export default function ProgressBar({ currentStep = 0, isDarkMode = false }) {
               fontSize: 14,
               textAlign: 'center',
               whiteSpace: 'nowrap',
-              maxWidth: 120,
+              width: '100%',
               overflow: 'hidden',
               textOverflow: 'ellipsis',
               fontWeight: isCurrent ? 'bold' : 'normal',
-              marginTop: 2,
               textShadow: isDarkMode ? '0 0 10px rgba(0,0,0,0.8)' : 'none',
             }}>{label}</div>
           </div>

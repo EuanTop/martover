@@ -1,6 +1,6 @@
 import React, { Suspense, useRef, useState, useEffect, useMemo } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
-import { PerspectiveCamera, Environment, MeshDistortMaterial, ContactShadows, Text, Billboard, Clouds, Cloud } from '@react-three/drei'
+import { PerspectiveCamera, Environment, ContactShadows, Text, Billboard, Clouds, Cloud } from '@react-three/drei'
 import { useSpring } from '@react-spring/core'
 import { a } from '@react-spring/three'
 import * as THREE from 'three'
@@ -18,8 +18,7 @@ import VisShape from '../../Components/VisShape/VisShape';
 import RdOverlaySvg from '../../Components/RdOverlay/RdOverlaySvg';
 import { OverlayBackground } from '../../Components/OverlayLayers';
 import PlantingConsole from '../../game/planting/PlantingConsole';
-
-const AnimatedMaterial = a(MeshDistortMaterial)
+import PotatoSpecimen from '../../Components/PotatoSpecimen/PotatoSpecimen';
 
 // 创建文字纹理 - 支持逐行显现效果
 function createTextTexture(text, startTime = null) {
@@ -227,10 +226,9 @@ function Blob({ currentPotatoData, windyMode, visualParams }) {
         }
     })
 
-    const [{ wobble, color, env }] = useSpring(
+    const [{ wobble, color }] = useSpring(
         {
             wobble: hovered ? 1.05 : 1,
-            env: 1,
             color: '#fff',
             config: { mass: 2, tension: 1000, friction: 10 }
         },
@@ -253,42 +251,24 @@ function Blob({ currentPotatoData, windyMode, visualParams }) {
                 <a.pointLight ref={light} position-z={-15} intensity={1.5} color="#fff" />
             </PerspectiveCamera>
             <group>
-                {/* 黑色描边 - 非常细的描边 */}
-                <a.mesh
-                    ref={outlineRef}
-                    scale={wobble.to(w => w * 1.005)}
-                >
-                    <sphereGeometry args={[1, 64, 64]} />
-                    <MeshDistortMaterial
-                        color="#000000"
-                        side={THREE.BackSide}
-                        distort={params.distort}
-                        speed={params.speed}
-                        transparent
-                        opacity={windyMode ? 0 : 1}
-                    />
-                </a.mesh>
-                
-                {/* 主土豆mesh */}
-                <a.mesh
-                    ref={sphere}
+                <PotatoSpecimen
+                    animated
+                    meshRef={sphere}
+                    outlineRef={outlineRef}
                     scale={wobble}
+                    outlineScale={wobble.to(w => w * 1.005)}
+                    color={color}
+                    map={textTexture}
+                    opacity={windyMode ? 0 : 0.9}
+                    outlineOpacity={windyMode ? 0 : 1}
+                    metalness={params.metalness}
+                    roughness={0}
+                    distort={params.distort}
+                    speed={params.speed}
+                    geometryDetail={64}
                     onPointerOver={() => setHovered(true)}
-                    onPointerOut={() => setHovered(false)}>
-                    <sphereGeometry args={[1, 64, 64]} />
-                    <AnimatedMaterial
-                        color={color}
-                        envMapIntensity={env}
-                        clearcoat={1}
-                        clearcoatRoughness={0}
-                        metalness={params.metalness}
-                        distort={params.distort}
-                        speed={params.speed}
-                        map={textTexture}
-                        transparent
-                        opacity={windyMode ? 0 : 0.9}
-                    />
-                </a.mesh>
+                    onPointerOut={() => setHovered(false)}
+                />
                 
                 {/* 不再使用Three.js的Text组件，改为传递textContent到外部 */}
             </group>

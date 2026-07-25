@@ -1,60 +1,58 @@
 import { GAME_PHASES } from './gamePhases';
 import {
-  advancePlanting,
-  canCompletePlantingCycle,
-  chooseIntervention,
-  configurePlanting,
-  createPlantingCycle,
-  harvestPlanting,
-  startPlanting,
-  updateAllocation,
-} from '../planting/plantingEngine';
+  advanceBreedingSimulation,
+  applyIntervention,
+  assignTuberUse,
+  BREEDING_STAGES,
+  canFeedHuman,
+  createBreedingSimulation,
+  harvestBreedingSimulation,
+  plantInZone,
+  VIEW_MODES,
+} from '../simulation/breedingSimulation';
+import { applyHumanFeeding, createHumanState } from '../human/humanEngine';
 
 export const GAME_SESSION_ACTIONS = Object.freeze({
   SELECT_CRATER: 'game-session/select-crater',
   CLEAR_CRATER: 'game-session/clear-crater',
   BEGIN_BREEDING: 'game-session/begin-breeding',
-  CONFIGURE_PLANTING: 'game-session/configure-planting',
-  START_PLANTING: 'game-session/start-planting',
-  ADVANCE_PLANTING: 'game-session/advance-planting',
-  CHOOSE_INTERVENTION: 'game-session/choose-intervention',
-  HARVEST_PLANTING: 'game-session/harvest-planting',
-  UPDATE_ALLOCATION: 'game-session/update-allocation',
-  COMPLETE_BREEDING: 'game-session/complete-breeding',
+  PLANT_IN_ZONE: 'game-session/plant-in-zone',
+  TICK: 'game-session/tick',
+  APPLY_INTERVENTION: 'game-session/apply-intervention',
+  HARVEST: 'game-session/harvest',
+  ASSIGN_TUBER: 'game-session/assign-tuber',
+  FEED_HUMAN: 'game-session/feed-human',
+  START_NEXT_GENERATION: 'game-session/start-next-generation',
   RESET: 'game-session/reset',
 });
 
 export const initialGameSessionState = Object.freeze({
   phase: GAME_PHASES.CRATER_SELECTION,
+  viewMode: VIEW_MODES.PLANET,
   selectedCrater: null,
-  selectedPotato: null,
   generation: 1,
-  planting: null,
+  simulation: null,
   lineage: [],
+  human: createHumanState(),
+  parentSeed: null,
 });
 
 export const gameSessionReducer = (state, action) => {
   switch (action.type) {
     case GAME_SESSION_ACTIONS.SELECT_CRATER:
+      if (state.viewMode !== VIEW_MODES.PLANET) return state;
+
       return {
         ...state,
-        phase: GAME_PHASES.CRATER_SELECTION,
         selectedCrater: action.payload,
-        selectedPotato: null,
-        generation: 1,
-        planting: null,
-        lineage: [],
       };
 
     case GAME_SESSION_ACTIONS.CLEAR_CRATER:
+      if (state.viewMode !== VIEW_MODES.PLANET) return state;
+
       return {
         ...state,
-        phase: GAME_PHASES.CRATER_SELECTION,
         selectedCrater: null,
-        selectedPotato: null,
-        generation: 1,
-        planting: null,
-        lineage: [],
       };
 
     case GAME_SESSION_ACTIONS.BEGIN_BREEDING:
@@ -63,90 +61,96 @@ export const gameSessionReducer = (state, action) => {
       return {
         ...state,
         phase: GAME_PHASES.POTATO_BREEDING,
-        selectedPotato: null,
-        planting: createPlantingCycle(state.selectedCrater, state.generation),
-      };
-
-    case GAME_SESSION_ACTIONS.CONFIGURE_PLANTING:
-      if (!state.planting) return state;
-
-      return {
-        ...state,
-        planting: configurePlanting(
-          state.planting,
-          action.payload.key,
-          action.payload.value
-        ),
-      };
-
-    case GAME_SESSION_ACTIONS.START_PLANTING:
-      if (!state.planting) return state;
-
-      return {
-        ...state,
-        planting: startPlanting(state.planting),
-      };
-
-    case GAME_SESSION_ACTIONS.ADVANCE_PLANTING:
-      if (!state.planting) return state;
-
-      return {
-        ...state,
-        planting: advancePlanting(state.planting, state.selectedCrater),
-      };
-
-    case GAME_SESSION_ACTIONS.CHOOSE_INTERVENTION:
-      if (!state.planting) return state;
-
-      return {
-        ...state,
-        planting: chooseIntervention(state.planting, action.payload),
-      };
-
-    case GAME_SESSION_ACTIONS.HARVEST_PLANTING:
-      if (!state.planting) return state;
-
-      return {
-        ...state,
-        planting: harvestPlanting(
-          state.planting,
+        viewMode: VIEW_MODES.CRATER,
+        simulation: createBreedingSimulation(
           state.selectedCrater,
-          action.payload
+          state.generation,
+          state.human,
+          state.parentSeed
         ),
       };
 
-    case GAME_SESSION_ACTIONS.UPDATE_ALLOCATION:
-      if (!state.planting) return state;
+    case GAME_SESSION_ACTIONS.PLANT_IN_ZONE:
+      if (!state.simulation) return state;
 
       return {
         ...state,
-        planting: updateAllocation(
-          state.planting,
-          action.payload.key,
-          action.payload.delta
+        simulation: plantInZone(state.simulation, action.payload),
+      };
+
+    case GAME_SESSION_ACTIONS.TICK:
+      if (!state.simulation) return state;
+
+      return {
+        ...state,
+        simulation: advanceBreedingSimulation(state.simulation),
+      };
+
+    case GAME_SESSION_ACTIONS.APPLY_INTERVENTION:
+      if (!state.simulation) return state;
+
+      return {
+        ...state,
+        simulation: applyIntervention(state.simulation, action.payload),
+      };
+
+    case GAME_SESSION_ACTIONS.HARVEST:
+      if (!state.simulation || !state.selectedCrater) return state;
+
+      return {
+        ...state,
+        simulation: harvestBreedingSimulation(
+          state.simulation,
+          state.selectedCrater
         ),
       };
 
-    case GAME_SESSION_ACTIONS.COMPLETE_BREEDING:
-      if (!canCompletePlantingCycle(state.planting)) return state;
+    case GAME_SESSION_ACTIONS.ASSIGN_TUBER:
+      if (!state.simulation) return state;
+
+      return {
+        ...state,
+        simulation: assignTuberUse(
+          state.simulation,
+          action.payload.index,
+          action.payload.use
+        ),
+      };
+
+    case GAME_SESSION_ACTIONS.FEED_HUMAN:
+      if (!canFeedHuman(state.simulation)) return state;
 
       {
         const lineageEntry = {
-          ...state.planting.harvestResult,
-          allocation: state.planting.allocation,
+          ...state.simulation.harvestResult,
+          allocation: state.simulation.tuberAssignments,
         };
 
         return {
           ...state,
           phase: GAME_PHASES.PRODUCTION,
-          selectedPotato: {
-            ...action.payload,
-            ...lineageEntry,
+          viewMode: VIEW_MODES.HUMAN,
+          simulation: {
+            ...state.simulation,
+            stage: BREEDING_STAGES.COMPLETE,
           },
-          generation: state.generation + 1,
+          human: applyHumanFeeding(state.human, lineageEntry),
           lineage: [...state.lineage, lineageEntry],
+          parentSeed: lineageEntry,
         };
       }
+
+    case GAME_SESSION_ACTIONS.START_NEXT_GENERATION:
+      if (state.viewMode !== VIEW_MODES.HUMAN || !state.parentSeed) return state;
+
+      return {
+        ...state,
+        phase: GAME_PHASES.CRATER_SELECTION,
+        viewMode: VIEW_MODES.PLANET,
+        selectedCrater: null,
+        generation: state.generation + 1,
+        simulation: null,
+      };
 
     case GAME_SESSION_ACTIONS.RESET:
       return initialGameSessionState;

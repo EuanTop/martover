@@ -1,11 +1,13 @@
 import React, { useRef, useMemo, useState, useEffect } from 'react';
-import { useFrame, useLoader, useThree } from '@react-three/fiber';
-import { OrbitControls, Text, useTexture } from '@react-three/drei';
+import { useFrame, useThree } from '@react-three/fiber';
+import { OrbitControls, Text } from '@react-three/drei';
 import * as THREE from 'three';
-import VisShape from '../../Components/VisShape/VisShape';
-import { OverlayBackground } from '../../Components/OverlayLayers'
-import Panel from '../../Components/Panel';
 import  { useCursorStore } from '../../store'
+import CraterCultivationScene from '../../game/world/CraterCultivationScene';
+import HumanOrbitalLab from '../../game/world/HumanOrbitalLab';
+import WorldCameraRig from '../../game/world/WorldCameraRig';
+import { calculateCraterPosition } from '../../game/world/worldCoordinates';
+import { VIEW_MODES } from '../../game/simulation/breedingSimulation';
 
 // 在组件外部创建纹理缓存
 const textureCache = {
@@ -23,11 +25,11 @@ const Mars = ({
   initialPosition = [0, 0, 0],
   scale = [1, 1, 1],
   featuresOpacity = 1,
-  hideMarsModel = false
+  hideMarsModel = false,
+  children
 }) => {
   const groupRef = useRef();
   const [texturesLoaded, setTexturesLoaded] = useState(false);
-  const { camera, viewport } = useThree();
   
   // 使用 useTexture 替代 useLoader，并利用缓存
   useEffect(() => {
@@ -156,7 +158,7 @@ const Mars = ({
       {Array.isArray(craters) && craters.map((crater, index) => (
         <Crater 
           key={index} 
-          position={calculatePosition(crater.latitude, crater.longitude)}
+          position={calculateCraterPosition(crater.latitude, crater.longitude)}
           onClick={() => isInteractive && onCraterClick?.(crater, index)}
           isSelected={selectedId === index}
           isVisible={(selectedId === null || selectedId === index) && isInteractive}
@@ -172,6 +174,7 @@ const Mars = ({
           opacity={featuresOpacity}
         />
       )}
+      {children}
     </group>
   );
 };
@@ -327,19 +330,6 @@ const Crater = ({
   );
 };
 
-const calculatePosition = (lat, lon) => {
-  // 交换经纬度的计算顺序
-  const latRad = (90 - lon) * (Math.PI / 180);  // 将纬度转换为与Y轴的夹角
-  const lonRad = -lat * (Math.PI / 180);        // 经度方向取反以匹配右手坐标系
-  
-  // 球面坐标转换为笛卡尔坐标
-  return [
-    Math.sin(latRad) * Math.cos(lonRad),  // x 坐标
-    Math.cos(latRad),                      // y 坐标 (北极为正)
-    Math.sin(latRad) * Math.sin(lonRad)    // z 坐标
-  ];
-};
-
 const MarsGlobe = ({ 
   craters = [],
   isDarkMode, 
@@ -351,9 +341,16 @@ const MarsGlobe = ({
   isInteractive = true,
   initialPosition = [0, 0, -20],
   scale = [1, 1, 1],
-  hideMarsModel = false
+  hideMarsModel = false,
+  viewMode = VIEW_MODES.PLANET,
+  simulation,
+  human,
+  selectedTuberUse,
+  onPlantInZone,
+  onAssignTuber
 }) => {
   const [selectedId, setSelectedId] = useState(null);
+  const controlsRef = useRef();
 
   // 当外部传入的 selectedCrater 为 null 时，重置内部选中状态
   useEffect(() => {
@@ -382,16 +379,42 @@ const MarsGlobe = ({
         selectedId={selectedId}
         showLines={showLines} 
         isDarkMode={isDarkMode}
-        isInteractive={isInteractive}
+        isInteractive={isInteractive && viewMode === VIEW_MODES.PLANET}
         initialPosition={initialPosition}
         scale={scale}
         hideMarsModel={hideMarsModel}
+      >
+        {selectedCrater && simulation && viewMode === VIEW_MODES.CRATER && (
+          <CraterCultivationScene
+            crater={selectedCrater}
+            simulation={simulation}
+            selectedUse={selectedTuberUse}
+            onPlantInZone={onPlantInZone}
+            onAssignTuber={onAssignTuber}
+          />
+        )}
+      </Mars>
+      {human && (
+        <HumanOrbitalLab
+          human={human}
+          visible={viewMode === VIEW_MODES.HUMAN}
+        />
+      )}
+      <WorldCameraRig
+        controlsRef={controlsRef}
+        viewMode={viewMode}
+        selectedCrater={selectedCrater}
       />
       <OrbitControls 
+        ref={controlsRef}
         enabled={isInteractive}
         enableZoom={isInteractive}  
         enableRotate={isInteractive}
-        enablePan={isInteractive}
+        enablePan={false}
+        minDistance={viewMode === VIEW_MODES.PLANET ? 2.8 : 0.72}
+        maxDistance={viewMode === VIEW_MODES.PLANET ? 9 : 4.8}
+        dampingFactor={0.075}
+        enableDamping
       />
     </>
   );

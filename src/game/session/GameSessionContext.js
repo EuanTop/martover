@@ -2,6 +2,7 @@ import React, {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useReducer,
 } from 'react';
@@ -11,11 +12,31 @@ import {
   initialGameSessionState,
 } from './gameSessionReducer';
 import { getGameProgressStep } from './gamePhases';
+import {
+  BREEDING_STAGES,
+  GENERATION_LENGTH_SOLS,
+} from '../simulation/breedingSimulation';
 
 const GameSessionContext = createContext(null);
+const SOL_DURATION_MS = 3000;
 
 export const GameSessionProvider = ({ children }) => {
   const [state, dispatch] = useReducer(gameSessionReducer, initialGameSessionState);
+
+  useEffect(() => {
+    if (
+      state.simulation?.stage !== BREEDING_STAGES.GROWING
+      || state.simulation.sol >= GENERATION_LENGTH_SOLS
+    ) {
+      return undefined;
+    }
+
+    const timer = window.setInterval(() => {
+      dispatch({ type: GAME_SESSION_ACTIONS.TICK });
+    }, SOL_DURATION_MS);
+
+    return () => window.clearInterval(timer);
+  }, [state.simulation?.stage, state.simulation?.sol]);
 
   const selectCrater = useCallback((crater) => {
     dispatch({ type: GAME_SESSION_ACTIONS.SELECT_CRATER, payload: crater });
@@ -29,44 +50,31 @@ export const GameSessionProvider = ({ children }) => {
     dispatch({ type: GAME_SESSION_ACTIONS.BEGIN_BREEDING });
   }, []);
 
-  const configurePlanting = useCallback((key, value) => {
+  const plantInZone = useCallback((zone) => {
+    dispatch({ type: GAME_SESSION_ACTIONS.PLANT_IN_ZONE, payload: zone });
+  }, []);
+
+  const applyIntervention = useCallback((type) => {
+    dispatch({ type: GAME_SESSION_ACTIONS.APPLY_INTERVENTION, payload: type });
+  }, []);
+
+  const harvest = useCallback(() => {
+    dispatch({ type: GAME_SESSION_ACTIONS.HARVEST });
+  }, []);
+
+  const assignTuber = useCallback((index, use) => {
     dispatch({
-      type: GAME_SESSION_ACTIONS.CONFIGURE_PLANTING,
-      payload: { key, value },
+      type: GAME_SESSION_ACTIONS.ASSIGN_TUBER,
+      payload: { index, use },
     });
   }, []);
 
-  const startPlanting = useCallback(() => {
-    dispatch({ type: GAME_SESSION_ACTIONS.START_PLANTING });
+  const feedHuman = useCallback(() => {
+    dispatch({ type: GAME_SESSION_ACTIONS.FEED_HUMAN });
   }, []);
 
-  const advancePlanting = useCallback(() => {
-    dispatch({ type: GAME_SESSION_ACTIONS.ADVANCE_PLANTING });
-  }, []);
-
-  const chooseIntervention = useCallback((intervention) => {
-    dispatch({
-      type: GAME_SESSION_ACTIONS.CHOOSE_INTERVENTION,
-      payload: intervention,
-    });
-  }, []);
-
-  const harvestPlanting = useCallback((harvestSol) => {
-    dispatch({
-      type: GAME_SESSION_ACTIONS.HARVEST_PLANTING,
-      payload: harvestSol,
-    });
-  }, []);
-
-  const updateAllocation = useCallback((key, delta) => {
-    dispatch({
-      type: GAME_SESSION_ACTIONS.UPDATE_ALLOCATION,
-      payload: { key, delta },
-    });
-  }, []);
-
-  const completeBreeding = useCallback((potato) => {
-    dispatch({ type: GAME_SESSION_ACTIONS.COMPLETE_BREEDING, payload: potato });
+  const startNextGeneration = useCallback(() => {
+    dispatch({ type: GAME_SESSION_ACTIONS.START_NEXT_GENERATION });
   }, []);
 
   const resetSession = useCallback(() => {
@@ -79,26 +87,24 @@ export const GameSessionProvider = ({ children }) => {
     selectCrater,
     clearCrater,
     beginBreeding,
-    configurePlanting,
-    startPlanting,
-    advancePlanting,
-    chooseIntervention,
-    harvestPlanting,
-    updateAllocation,
-    completeBreeding,
+    plantInZone,
+    applyIntervention,
+    harvest,
+    assignTuber,
+    feedHuman,
+    startNextGeneration,
     resetSession,
   }), [
     state,
     selectCrater,
     clearCrater,
     beginBreeding,
-    configurePlanting,
-    startPlanting,
-    advancePlanting,
-    chooseIntervention,
-    harvestPlanting,
-    updateAllocation,
-    completeBreeding,
+    plantInZone,
+    applyIntervention,
+    harvest,
+    assignTuber,
+    feedHuman,
+    startNextGeneration,
     resetSession,
   ]);
 
