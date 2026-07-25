@@ -91,6 +91,13 @@ const CloudDownPage = ({
   const [marsFullyRendered, setMarsFullyRendered] = useState(skipIntro);
   const [hideMarsModel, setHideMarsModel] = useState(false);
   const [selectedTuberUse, setSelectedTuberUse] = useState(TUBER_USES.SEED);
+  const [selectedIntervention, setSelectedIntervention] = useState(null);
+
+  useEffect(() => {
+    if (viewMode !== VIEW_MODES.CRATER || simulation?.stage !== 'growing') {
+      setSelectedIntervention(null);
+    }
+  }, [simulation?.stage, viewMode]);
 
   // 修改相机位置的初始值 - 根据是否跳过介绍决定初始位置
   const [cameraPosition, setCameraPosition] = useSpring(() => ({
@@ -249,6 +256,11 @@ const TimestampDisplay = ({ isDarkMode }) => {
     onBeginBreeding();
   };
 
+  const handleApplyIntervention = (type) => {
+    onApplyIntervention(type);
+    setSelectedIntervention(null);
+  };
+
   // 如果应用尚未准备好，不显示任何内容
   // 所有加载工作都在 App.js 中完成，这里不再显示加载提示
   if (!appReady) {
@@ -334,8 +346,10 @@ const TimestampDisplay = ({ isDarkMode }) => {
                 simulation={simulation}
                 human={human}
                 selectedTuberUse={selectedTuberUse}
+                selectedIntervention={selectedIntervention}
                 onPlantInZone={onPlantInZone}
                 onAssignTuber={onAssignTuber}
+                onApplyIntervention={handleApplyIntervention}
                 onFinishedRendering={() => {
                   console.log("[Mars] 渲染完成，准备显示提示");
                   setMarsFullyRendered(true);
@@ -371,9 +385,10 @@ const TimestampDisplay = ({ isDarkMode }) => {
               generation={generation}
               lineage={lineage}
               selectedUse={selectedTuberUse}
+              selectedIntervention={selectedIntervention}
               onSelectUse={setSelectedTuberUse}
+              onSelectIntervention={setSelectedIntervention}
               onPlantInZone={onPlantInZone}
-              onIntervention={onApplyIntervention}
               onHarvest={onHarvest}
               onAssignTuber={onAssignTuber}
               onFeedHuman={onFeedHuman}

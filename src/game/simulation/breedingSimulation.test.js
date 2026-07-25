@@ -8,6 +8,7 @@ import {
   createBreedingSimulation,
   CRATER_ZONES,
   harvestBreedingSimulation,
+  INTERVENTION_EFFECTS,
   INTERVENTION_TYPES,
   plantInZone,
   TUBER_USES,
@@ -49,7 +50,52 @@ describe('breedingSimulation', () => {
 
     expect(heated.resources.heat).toBe(1);
     expect(heated.interventions).toEqual([{ type: 'heat', sol: 0 }]);
+    expect(heated.vigor).toBe(planted.vigor + INTERVENTION_EFFECTS.heat.vigor);
+    expect(heated.stress).toBe(planted.stress + INTERVENTION_EFFECTS.heat.stress);
+    expect(heated.expression).toBe(
+      planted.expression + INTERVENTION_EFFECTS.heat.expression
+    );
+    expect(heated.growth).toBe(INTERVENTION_EFFECTS.heat.growth);
     expect(heated.events.at(-1).kind).toBe('intervention');
+  });
+
+  it('keeps heat growth acceleration on later sols', () => {
+    const planted = plantInZone(
+      createBreedingSimulation(crater),
+      CRATER_ZONES.RIM
+    );
+    const heated = applyIntervention(planted, INTERVENTION_TYPES.HEAT);
+    const advanced = advanceBreedingSimulation(heated);
+
+    expect(advanced.growthAcceleration).toBe(
+      INTERVENTION_EFFECTS.heat.growth
+    );
+    expect(advanced.growth).toBe(
+      Math.round((1 / 30) * 100 + INTERVENTION_EFFECTS.heat.growth)
+    );
+  });
+
+  it('makes every intervention tradeoff explicit and deterministic', () => {
+    const planted = plantInZone(
+      createBreedingSimulation(crater),
+      CRATER_ZONES.FLOOR
+    );
+
+    Object.values(INTERVENTION_TYPES).forEach((type) => {
+      const effect = INTERVENTION_EFFECTS[type];
+      const result = applyIntervention(planted, type);
+
+      expect(result.vigor).toBe(Math.min(100, planted.vigor + effect.vigor));
+      expect(result.stress).toBe(Math.max(
+        0,
+        Math.min(100, planted.stress + effect.stress)
+      ));
+      expect(result.expression).toBe(Math.max(
+        0,
+        Math.min(100, planted.expression + effect.expression)
+      ));
+      expect(result.growth).toBe(effect.growth);
+    });
   });
 
   it('requires every tuber plus seed and feed before the human stage', () => {

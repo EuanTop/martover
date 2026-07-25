@@ -14,8 +14,10 @@ const MarsComponent = ({
   simulation,
   human,
   selectedTuberUse,
+  selectedIntervention,
   onPlantInZone,
   onAssignTuber,
+  onApplyIntervention,
   onFinishedRendering // 添加渲染完成的回调函数
 }) => {
   const marsRef = useRef();
@@ -185,8 +187,10 @@ const MarsComponent = ({
         simulation={simulation}
         human={human}
         selectedTuberUse={selectedTuberUse}
+        selectedIntervention={selectedIntervention}
         onPlantInZone={onPlantInZone}
         onAssignTuber={onAssignTuber}
+        onApplyIntervention={onApplyIntervention}
       />
     </animated.group>
   );

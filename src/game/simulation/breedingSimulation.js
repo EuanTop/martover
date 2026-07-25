@@ -62,23 +62,35 @@ const ZONE_EFFECTS = Object.freeze({
   },
 });
 
-const INTERVENTION_EFFECTS = Object.freeze({
+export const INTERVENTION_EFFECTS = Object.freeze({
   [INTERVENTION_TYPES.WATER]: {
+    label: '恢复活力',
+    shortLabel: '水',
+    hint: '叶片抬起，压力下降',
     vigor: 15,
-    stress: -10,
-    expression: -3,
+    stress: -9,
+    expression: -2,
+    growth: 0,
     event: '水沿根区扩散，萎缩的叶片重新展开。',
   },
   [INTERVENTION_TYPES.HEAT]: {
-    vigor: 9,
-    stress: -7,
-    expression: 3,
-    event: '短时加热唤醒了休眠芽眼，也加快了组织变化。',
+    label: '推进表达',
+    shortLabel: '热',
+    hint: '芽眼加速，压力上升',
+    vigor: 4,
+    stress: 6,
+    expression: 8,
+    growth: 5,
+    event: '热量沿坑底推进，休眠芽眼提前展开，组织变化被放大。',
   },
   [INTERVENTION_TYPES.SHIELD]: {
+    label: '降低压力',
+    shortLabel: '遮蔽',
+    hint: '变化变慢，植株更稳定',
     vigor: 5,
-    stress: -15,
-    expression: -7,
+    stress: -18,
+    expression: -6,
+    growth: 0,
     event: '遮蔽场压低环境刺激，植株恢复同步生长。',
   },
 });
@@ -202,6 +214,7 @@ export const createBreedingSimulation = (
     18
   )),
   growth: 0,
+  growthAcceleration: 0,
   events: [],
   harvestResult: null,
   tuberAssignments: [],
@@ -270,7 +283,8 @@ export const advanceBreedingSimulation = (simulation) => {
       100
     )),
     growth: Math.round(clamp(
-      (nextSol / GENERATION_LENGTH_SOLS) * 100,
+      (nextSol / GENERATION_LENGTH_SOLS) * 100
+        + (simulation.growthAcceleration || 0),
       0,
       100
     )),
@@ -305,6 +319,16 @@ export const applyIntervention = (simulation, type) => {
     stress: Math.round(clamp(simulation.stress + effect.stress, 0, 100)),
     expression: Math.round(clamp(
       simulation.expression + effect.expression,
+      0,
+      100
+    )),
+    growthAcceleration: Math.round(clamp(
+      (simulation.growthAcceleration || 0) + effect.growth,
+      0,
+      18
+    )),
+    growth: Math.round(clamp(
+      simulation.growth + effect.growth,
       0,
       100
     )),

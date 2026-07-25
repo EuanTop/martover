@@ -1,9 +1,11 @@
 import React, { useRef, useMemo, useState, useEffect } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, Text } from '@react-three/drei';
+import { EffectComposer, SMAA } from '@react-three/postprocessing';
 import * as THREE from 'three';
 import  { useCursorStore } from '../../store'
 import CraterCultivationScene from '../../game/world/CraterCultivationScene';
+import CraterViewEffects from '../../game/world/CraterViewEffects';
 import HumanOrbitalLab from '../../game/world/HumanOrbitalLab';
 import WorldCameraRig from '../../game/world/WorldCameraRig';
 import { calculateCraterPosition } from '../../game/world/worldCoordinates';
@@ -12,7 +14,7 @@ import { VIEW_MODES } from '../../game/simulation/breedingSimulation';
 // 在组件外部创建纹理缓存
 const textureCache = {
   marsTexture: null,
-  normalMap: null
+  normalMap: null,
 };
 
 const Mars = ({ 
@@ -26,10 +28,12 @@ const Mars = ({
   scale = [1, 1, 1],
   featuresOpacity = 1,
   hideMarsModel = false,
+  viewMode = VIEW_MODES.PLANET,
   children
 }) => {
   const groupRef = useRef();
   const [texturesLoaded, setTexturesLoaded] = useState(false);
+  const { gl } = useThree();
   
   // 使用 useTexture 替代 useLoader，并利用缓存
   useEffect(() => {
@@ -63,6 +67,25 @@ const Mars = ({
     
     loadTextures();
   }, [hideMarsModel]); // 添加hideMarsModel依赖，确保纹理在显示/隐藏时重新检查
+
+  useEffect(() => {
+    if (!texturesLoaded) return;
+
+    const maxAnisotropy = gl.capabilities.getMaxAnisotropy();
+    const colorTexture = textureCache.marsTexture;
+    const normalTexture = textureCache.normalMap;
+
+    colorTexture.colorSpace = THREE.SRGBColorSpace;
+    normalTexture.colorSpace = THREE.NoColorSpace;
+
+    [colorTexture, normalTexture].forEach((texture) => {
+      texture.minFilter = THREE.LinearMipmapLinearFilter;
+      texture.magFilter = THREE.LinearFilter;
+      texture.anisotropy = maxAnisotropy;
+      texture.generateMipmaps = true;
+      texture.needsUpdate = true;
+    });
+  }, [gl, texturesLoaded]);
   
   // 将 useMemo 移到条件判断之前
   const { gridGeometry, labels } = useMemo(() => {
@@ -142,8 +165,13 @@ const Mars = ({
     <group ref={groupRef} position={initialPosition} scale={scale}>
       {!hideMarsModel && (
         <mesh>
-          <sphereGeometry args={[1, 64, 64]} />
-          <meshStandardMaterial map={textureCache.marsTexture} normalMap={textureCache.normalMap} />
+          <sphereGeometry args={[1, 96, 96]} />
+          <meshStandardMaterial
+            map={textureCache.marsTexture}
+            normalMap={textureCache.normalMap}
+            normalScale={new THREE.Vector2(0.42, 0.42)}
+            roughness={0.92}
+          />
         </mesh>
       )}
       {showLines && isInteractive && (
@@ -346,11 +374,16 @@ const MarsGlobe = ({
   simulation,
   human,
   selectedTuberUse,
+  selectedIntervention,
   onPlantInZone,
-  onAssignTuber
+  onAssignTuber,
+  onApplyIntervention,
 }) => {
   const [selectedId, setSelectedId] = useState(null);
   const controlsRef = useRef();
+  const planetControlsEnabled = (
+    isInteractive && viewMode === VIEW_MODES.PLANET
+  );
 
   // 当外部传入的 selectedCrater 为 null 时，重置内部选中状态
   useEffect(() => {
@@ -371,8 +404,11 @@ const MarsGlobe = ({
 
   return (
     <>
-      <ambientLight intensity={3} />
-      <pointLight position={[10, 10, 10]} />
+      <ambientLight intensity={viewMode === VIEW_MODES.CRATER ? 1.35 : 3} />
+      <pointLight
+        position={[10, 10, 10]}
+        intensity={viewMode === VIEW_MODES.CRATER ? 0.55 : 1}
+      />
       <Mars 
         craters={craters} 
         onCraterClick={(crater, index) => handleCraterClick(crater, index)}
@@ -383,14 +419,17 @@ const MarsGlobe = ({
         initialPosition={initialPosition}
         scale={scale}
         hideMarsModel={hideMarsModel}
+        viewMode={viewMode}
       >
         {selectedCrater && simulation && viewMode === VIEW_MODES.CRATER && (
           <CraterCultivationScene
             crater={selectedCrater}
             simulation={simulation}
             selectedUse={selectedTuberUse}
+            selectedIntervention={selectedIntervention}
             onPlantInZone={onPlantInZone}
             onAssignTuber={onAssignTuber}
+            onApplyIntervention={onApplyIntervention}
           />
         )}
       </Mars>
@@ -407,15 +446,24 @@ const MarsGlobe = ({
       />
       <OrbitControls 
         ref={controlsRef}
-        enabled={isInteractive}
-        enableZoom={isInteractive}  
-        enableRotate={isInteractive}
+        enabled={planetControlsEnabled}
+        enableZoom={planetControlsEnabled}
+        enableRotate={planetControlsEnabled}
         enablePan={false}
-        minDistance={viewMode === VIEW_MODES.PLANET ? 2.8 : 0.72}
-        maxDistance={viewMode === VIEW_MODES.PLANET ? 9 : 4.8}
+        minDistance={viewMode === VIEW_MODES.PLANET ? 2.8 : 0.2}
+        maxDistance={viewMode === VIEW_MODES.PLANET ? 9 : 1.4}
         dampingFactor={0.075}
         enableDamping
       />
+      {viewMode === VIEW_MODES.CRATER && (
+        <EffectComposer
+          multisampling={4}
+          enableNormalPass={false}
+        >
+          <CraterViewEffects sharpness={1.52} contrast={0.12} />
+          <SMAA />
+        </EffectComposer>
+      )}
     </>
   );
 };

@@ -17,6 +17,7 @@ import {
   getCraterZoneOptions,
   getTuberAllocation,
   HARVEST_UNLOCK_SOL,
+  INTERVENTION_EFFECTS,
   INTERVENTION_TYPES,
   TUBER_USES,
   VIEW_MODES,
@@ -64,25 +65,49 @@ const StatusBar = ({ label, value }) => (
 
 const InterventionButton = ({
   icon: Icon,
-  label,
+  type,
+  effect,
   count,
+  selected,
   onClick,
 }) => (
   <button
     type="button"
-    className={styles.toolButton}
+    className={`${styles.toolButton} ${selected ? styles.selectedTool : ''}`}
+    data-type={type}
     onClick={onClick}
     disabled={count <= 0}
+    aria-pressed={selected}
+    aria-label={`${effect.shortLabel}：${effect.label}。选择后点击坑内作用点确认。`}
   >
-    <Icon />
-    <span>{label}</span>
+    <span className={styles.toolVisual}>
+      <Icon />
+    </span>
+    <span className={styles.toolCopy}>
+      <strong>{effect.shortLabel} · {effect.label}</strong>
+      <small>{effect.hint}</small>
+    </span>
+    <span className={styles.toolAction}>
+      {selected ? '点击作用点确认' : '选择工具'}
+    </span>
     <b>{count}</b>
   </button>
 );
 
-const GrowthHUD = ({ simulation, onIntervention, onHarvest }) => {
+const GrowthHUD = ({
+  simulation,
+  selectedIntervention,
+  onSelectIntervention,
+  onHarvest,
+}) => {
   const latestEvent = simulation.events.at(-1);
   const harvestAvailable = simulation.sol >= HARVEST_UNLOCK_SOL;
+  const activeZone = getCraterZoneOptions().find(
+    (option) => option.value === simulation.zone
+  );
+  const selectedEffect = selectedIntervention
+    ? INTERVENTION_EFFECTS[selectedIntervention]
+    : null;
 
   return (
     <>
@@ -96,6 +121,7 @@ const GrowthHUD = ({ simulation, onIntervention, onHarvest }) => {
           <StatusBar label="生长" value={simulation.growth} />
           <StatusBar label="活力" value={simulation.vigor} />
           <StatusBar label="压力" value={simulation.stress} />
+          <StatusBar label="表达" value={simulation.expression} />
         </div>
       </div>
 
@@ -112,25 +138,56 @@ const GrowthHUD = ({ simulation, onIntervention, onHarvest }) => {
         )}
       </div>
 
-      <div className={styles.tools}>
-        <InterventionButton
-          icon={CloudOutlined}
-          label="水"
-          count={simulation.resources.water}
-          onClick={() => onIntervention(INTERVENTION_TYPES.WATER)}
-        />
-        <InterventionButton
-          icon={FireOutlined}
-          label="热"
-          count={simulation.resources.heat}
-          onClick={() => onIntervention(INTERVENTION_TYPES.HEAT)}
-        />
-        <InterventionButton
-          icon={SafetyCertificateOutlined}
-          label="遮蔽"
-          count={simulation.resources.shield}
-          onClick={() => onIntervention(INTERVENTION_TYPES.SHIELD)}
-        />
+      <div className={styles.interventionPanel}>
+        <div className={styles.interventionTarget}>
+          <span>操作流程</span>
+          <strong>
+            {selectedEffect ? '第 2 步 · 确认' : '第 1 步 · 选工具'}
+          </strong>
+          <small>
+            {selectedEffect
+              ? `点击坑内${activeZone?.label || '种植区'}的彩色作用点`
+              : `${activeZone?.label || '种植区'}等待作用`}
+          </small>
+        </div>
+        <div className={styles.tools}>
+          <InterventionButton
+            icon={CloudOutlined}
+            type={INTERVENTION_TYPES.WATER}
+            effect={INTERVENTION_EFFECTS[INTERVENTION_TYPES.WATER]}
+            count={simulation.resources.water}
+            selected={selectedIntervention === INTERVENTION_TYPES.WATER}
+            onClick={() => onSelectIntervention(
+              selectedIntervention === INTERVENTION_TYPES.WATER
+                ? null
+                : INTERVENTION_TYPES.WATER
+            )}
+          />
+          <InterventionButton
+            icon={FireOutlined}
+            type={INTERVENTION_TYPES.HEAT}
+            effect={INTERVENTION_EFFECTS[INTERVENTION_TYPES.HEAT]}
+            count={simulation.resources.heat}
+            selected={selectedIntervention === INTERVENTION_TYPES.HEAT}
+            onClick={() => onSelectIntervention(
+              selectedIntervention === INTERVENTION_TYPES.HEAT
+                ? null
+                : INTERVENTION_TYPES.HEAT
+            )}
+          />
+          <InterventionButton
+            icon={SafetyCertificateOutlined}
+            type={INTERVENTION_TYPES.SHIELD}
+            effect={INTERVENTION_EFFECTS[INTERVENTION_TYPES.SHIELD]}
+            count={simulation.resources.shield}
+            selected={selectedIntervention === INTERVENTION_TYPES.SHIELD}
+            onClick={() => onSelectIntervention(
+              selectedIntervention === INTERVENTION_TYPES.SHIELD
+                ? null
+                : INTERVENTION_TYPES.SHIELD
+            )}
+          />
+        </div>
       </div>
     </>
   );
@@ -267,9 +324,10 @@ const GameHUD = ({
   generation,
   lineage,
   selectedUse,
+  selectedIntervention,
   onSelectUse,
+  onSelectIntervention,
   onPlantInZone,
-  onIntervention,
   onHarvest,
   onAssignTuber,
   onFeedHuman,
@@ -320,7 +378,8 @@ const GameHUD = ({
       {simulation.stage === BREEDING_STAGES.GROWING && (
         <GrowthHUD
           simulation={simulation}
-          onIntervention={onIntervention}
+          selectedIntervention={selectedIntervention}
+          onSelectIntervention={onSelectIntervention}
           onHarvest={onHarvest}
         />
       )}

@@ -2,7 +2,8 @@ import { useEffect, useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { VIEW_MODES } from '../simulation/breedingSimulation';
-import { getCraterWorldVector } from './worldCoordinates';
+import { getCraterWorldRadius } from './craterVisualModel';
+import { MARS_RADIUS, getCraterWorldVector } from './worldCoordinates';
 
 const HUMAN_TARGET = new THREE.Vector3(3.55, 0.88, 0);
 const HUMAN_CAMERA = new THREE.Vector3(5.05, 1.3, 2.25);
@@ -10,7 +11,10 @@ const HUMAN_CAMERA = new THREE.Vector3(5.05, 1.3, 2.25);
 const smoothStep = (value) => value * value * (3 - 2 * value);
 
 const getCraterCamera = (crater) => {
-  const target = getCraterWorldVector(crater, 2.03);
+  // The crater scene is attached just above the unit Mars sphere. Aim at that
+  // same surface point so the local terrain fills the frame without breaking
+  // its connection to the globe.
+  const target = getCraterWorldVector(crater, MARS_RADIUS * 1.006);
   const normal = target.clone().normalize();
   const tangent = new THREE.Vector3(0, 1, 0).cross(normal);
 
@@ -19,13 +23,31 @@ const getCraterCamera = (crater) => {
   }
 
   tangent.normalize();
+  const bitangent = normal.clone().cross(tangent).normalize();
+  const craterRadius = getCraterWorldRadius(crater);
+  const cameraDistance = THREE.MathUtils.clamp(
+    craterRadius * 3.7,
+    0.25,
+    0.32
+  );
+  const surfaceOffset = THREE.MathUtils.clamp(
+    craterRadius * 3.5,
+    0.22,
+    0.31
+  );
+  const lookTarget = target
+    .clone()
+    .add(tangent.clone().multiplyScalar(surfaceOffset * 0.18))
+    .add(bitangent.clone().multiplyScalar(surfaceOffset * 0.06));
 
   return {
     target,
+    lookTarget,
     position: target
       .clone()
-      .add(normal.multiplyScalar(1.55))
-      .add(tangent.multiplyScalar(0.42)),
+      .add(normal.clone().multiplyScalar(cameraDistance))
+      .add(tangent.clone().multiplyScalar(surfaceOffset))
+      .add(bitangent.clone().multiplyScalar(surfaceOffset * 0.2)),
   };
 };
 
@@ -63,7 +85,7 @@ const WorldCameraRig = ({ controlsRef, viewMode, selectedCrater }) => {
       fromPosition: camera.position.clone(),
       fromTarget: controls.target.clone(),
       toPosition: destination.position,
-      toTarget: destination.target,
+      toTarget: destination.lookTarget || destination.target,
     };
     controls.enabled = false;
   }, [camera, controlsRef, selectedCrater, viewMode]);
@@ -94,7 +116,7 @@ const WorldCameraRig = ({ controlsRef, viewMode, selectedCrater }) => {
     controls.update();
 
     if (progress >= 1) {
-      controls.enabled = true;
+      controls.enabled = viewMode === VIEW_MODES.PLANET;
       transitionRef.current = null;
     }
   });
