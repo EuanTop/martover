@@ -12,6 +12,7 @@ import Part3Gallery from '../Part3Gallery/Part3Gallery'; // 添加这一行导�
 import MRIViewer from '../../Components/PotatoSliceViewer/MRIViewer';
 import { MRISlice } from '../MRIPotatoPage/MRIPotatoPage';
 import { getCraterInfluences, sortPotatoesByInfluence } from '../../utils/breedingLogic';
+import { GAME_PHASES } from '../../game/session/gamePhases';
 import { EnvironmentEffects, EnvironmentIcon } from '../../Components/EnvironmentEffects/EnvironmentEffects';
 import VisShape from '../../Components/VisShape/VisShape';
 import RdOverlaySvg from '../../Components/RdOverlay/RdOverlaySvg';
@@ -425,12 +426,13 @@ function CloudsComponent({ windyMode, showWindImage, coverMode, onCloudGone, isB
 
 // 新增Part3Gallery组件
 
-const PotatoPlanet = ({ potatoData, selectedCrater, onModeChange }) => {
-    const [progressStep, setProgressStep] = useState(() => {
-        // 获取已达到的最高进度
-        return Number(localStorage.getItem('mars-highest-progress-step')) || 2; // 默认为第2步
-    });
-
+const PotatoPlanet = ({
+    potatoData,
+    selectedCrater,
+    onModeChange,
+    gamePhase,
+    onCompleteBreeding,
+}) => {
     // 育种逻辑状态
     const [sortedPotatoes, setSortedPotatoes] = useState([]);
     const [influences, setInfluences] = useState([]);
@@ -475,7 +477,7 @@ const PotatoPlanet = ({ potatoData, selectedCrater, onModeChange }) => {
     const [showWindImage, setShowWindImage] = useState(false)
     const [imgIn, setImgIn] = useState(false)
     const [maskProgress, setMaskProgress] = useState(0)
-    const [showPart3, setShowPart3] = useState(false)
+    const showPart3 = gamePhase === GAME_PHASES.PRODUCTION
     const [confirmHover, setConfirmHover] = useState(false);
     const [backHover, setBackHover] = useState(false); // 添加返回按钮悬停状态
     const [defineHover, setDefineHover] = useState(false); // 添加"认定优秀品种"按钮悬停状态
@@ -631,19 +633,7 @@ const PotatoPlanet = ({ potatoData, selectedCrater, onModeChange }) => {
     // 确认按钮点击
 // 修改确认按钮点击处理函数
 function handleConfirm() {
-    // 获取当前最高进度
-    const currentHighest = Number(localStorage.getItem('mars-highest-progress-step')) || 2;
-    // 如果第3步更高，则更新最高进度
-    if (3 > currentHighest) {
-        localStorage.setItem('mars-highest-progress-step', '3');
-    }
-    // 保存当前进度
-    localStorage.setItem('mars-progress-step', '3');
-    
-    // 更新状态
-    setProgressStep(3);
-    // 显示第3部分
-    setShowPart3(true);
+    onCompleteBreeding(displayPotatoes[currentIndex]);
 }
 
     // 返回按钮的点击处理函数

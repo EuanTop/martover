@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
 import Papa from 'papaparse';
 import * as THREE from 'three';
+import { createCraterCatalog } from '../game/data/craterCatalog';
 
 export const useDataLoader = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [loadingStatus, setLoadingStatus] = useState('正在准备加载数据...');
   const [loadError, setLoadError] = useState(null);
-  const [craterData, setCraterData] = useState({ preview: [], full: [] });
+  const [craterData, setCraterData] = useState({ available: [], totalCount: 0 });
   const [potatoData, setPotatoData] = useState([]);
   const [appReady, setAppReady] = useState(false);
 
@@ -42,10 +43,7 @@ export const useDataLoader = () => {
                 }))
                 .filter(crater => !isNaN(crater.latitude) && !isNaN(crater.longitude));
               
-              const previewCraters = allCraters.slice(0, 38);
-              const fullCraters = allCraters.slice(0, 101);
-              
-              resolve({ preview: previewCraters, full: fullCraters });
+              resolve(createCraterCatalog(allCraters));
             },
             error: reject
           });

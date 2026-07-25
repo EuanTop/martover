@@ -10,8 +10,13 @@ import RdOverlaySvg from '../../Components/RdOverlay/RdOverlaySvg';
 import ProgressBar from '../../Components/ProgressBar';
 import Button from '../../Components/common/Button/Button';
 
-const CraterGrid = ({ craters, isDarkMode }) => {
-  const [selectedCrater, setSelectedCrater] = useState(null);
+const CraterGrid = ({
+  craters,
+  isDarkMode,
+  selectedCrater,
+  onCraterSelect,
+  onCraterClear,
+}) => {
   const [isFirstVisit, setIsFirstVisit] = useState(true);
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
@@ -27,7 +32,7 @@ const CraterGrid = ({ craters, isDarkMode }) => {
     const handlePageChange = (page, size) => {
       setCurrentPage(page);
       setPageSize(size);
-      setSelectedCrater(null); // 切换分页时重置选中状态
+      onCraterClear(); // 切换分页时重置选中状态
     };
 
   useEffect(() => {
@@ -63,11 +68,19 @@ const CraterGrid = ({ craters, isDarkMode }) => {
   };
 
   const handleCraterClick = (crater) => {
-    setSelectedCrater(selectedCrater?.id === crater.id ? null : crater);
+    if (selectedCrater?.id === crater.id) {
+      onCraterClear();
+      return;
+    }
+
+    onCraterSelect(crater);
   };
 
   return (
-    <div className={`min-h-screen p-8 ${isDarkMode ? 'bg-black text-white' : 'bg-[#F57435] text-black'}`}>
+    <div
+      className={`min-h-screen p-8 ${isDarkMode ? 'bg-black text-white' : 'bg-[#F57435] text-black'}`}
+      data-crater-count={craters.length}
+    >
       <ProgressBar currentStep={progressStep} />
       {/* 顶层蒙版 */}
       <OverlayBackground />
@@ -121,14 +134,14 @@ const CraterGrid = ({ craters, isDarkMode }) => {
 
       {/* 选中的陨石坑信息面板 */}
       {selectedCrater && (
-        <Panel isDarkMode={isDarkMode} onClose={() => setSelectedCrater(null)} selectedCrater={selectedCrater} />
+        <Panel isDarkMode={isDarkMode} onClose={onCraterClear} selectedCrater={selectedCrater} />
       )}
 
       {/* 网格布局 */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 pt-16">
         {currentCraters.map((crater, index) => (
           <div 
-            key={index}
+            key={crater.id}
             className={`relative aspect-square ${isDarkMode ? 'bg-gray-900/50 border border-white' : 'bg-[#F16B28] border border-black'} rounded-lg p-4 backdrop-blur-lg `}
             onClick={() => handleCraterClick(crater)}
           >

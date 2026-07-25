@@ -15,6 +15,7 @@ import Button from '../../Components/common/Button/Button';
 import VisShape from '../../Components/VisShape/VisShape';
 import RdOverlaySvg from '../../Components/RdOverlay/RdOverlaySvg';
 import { OverlayBackground } from '../../Components/OverlayLayers';
+import { GAME_PHASES } from '../../game/session/gamePhases';
 
 // 浮现水滴组件 - 从火星坑底部浮现出类似土豆的变化小圆球，向上融入土豆
 const RisingDroplets = () => {
@@ -123,7 +124,12 @@ const CloudDownPage = ({
   showLines, 
   setShowLines, 
   selectedCrater,
-  setSelectedCrater,
+  onCraterSelect,
+  onCraterClear,
+  gamePhase,
+  progressStep,
+  onBeginBreeding,
+  onCompleteBreeding,
   craterData,
   potatoData,
   appReady
@@ -156,8 +162,7 @@ const CloudDownPage = ({
   }, [skipIntro, setSearchParams]);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [showFlash, setShowFlash] = useState(false);
-  const [progressStep, setProgressStep] = useState(1); // 默认第一关
-  const [showPotato, setShowPotato] = useState(false);
+  const showPotato = gamePhase !== GAME_PHASES.CRATER_SELECTION;
   // 将这个状态移动到组件顶部
   const [marsFullyRendered, setMarsFullyRendered] = useState(skipIntro);
   const [hideMarsModel, setHideMarsModel] = useState(false);
@@ -317,7 +322,6 @@ const TimestampDisplay = ({ isDarkMode }) => {
   // 修改关闭介绍卡片的处理函数 - 移除持久层存储
   const handleIntroComplete = () => {
     setShowIntro(false);
-    setProgressStep(1);
     // 停止信封音乐，播放降落音乐
     targetsAudioRef.current?.pause();
     welcomeAudioRef.current?.play().catch(() => {});
@@ -326,8 +330,7 @@ const TimestampDisplay = ({ isDarkMode }) => {
 
   const navigate = useNavigate();
   const handleSelectCrater = () => {
-    setProgressStep(2);
-    setShowPotato(true);
+    onBeginBreeding();
   };
 
   // 如果应用尚未准备好，不显示任何内容
@@ -338,7 +341,11 @@ const TimestampDisplay = ({ isDarkMode }) => {
   
   // 组件的渲染部分
   return (
-    <div className={`${styles.container} ${isDarkMode ? 'dark-mode' : ''}`} style={{ background: isDarkMode ? '#000000' : '#F57435' }}>
+    <div
+      className={`${styles.container} ${isDarkMode ? 'dark-mode' : ''}`}
+      data-crater-count={craterData.length}
+      style={{ background: isDarkMode ? '#000000' : '#F57435' }}
+    >
       {/* 顶部关卡进度条 - 只在火星页面显示，不在介绍页面显示 */}
       {!showIntro && !showPotato && <ProgressBar currentStep={progressStep} isDarkMode={isDarkMode} />}
       
@@ -405,7 +412,7 @@ const TimestampDisplay = ({ isDarkMode }) => {
                 isTransitioning={isTransitioning}
                 isDarkMode={isDarkMode}
                 selectedCrater={selectedCrater}
-                setSelectedCrater={setSelectedCrater}
+                setSelectedCrater={onCraterSelect}
                 craterData={craterData}
                 hideMarsModel={hideMarsModel}
                 onFinishedRendering={() => {
@@ -421,7 +428,7 @@ const TimestampDisplay = ({ isDarkMode }) => {
             <Panel 
               isDarkMode={isDarkMode} 
               onClose={() => {
-                setSelectedCrater(null);
+                onCraterClear();
                 const mars = document.querySelector('#mars-globe');  // 假设Mars组件有id
                 if (mars) {
                   mars.dispatchEvent(new CustomEvent('resetSelection'));
@@ -603,6 +610,8 @@ const TimestampDisplay = ({ isDarkMode }) => {
               potatoData={potatoData}
               selectedCrater={selectedCrater}
               onModeChange={handlePotatoModeChange}
+              gamePhase={gamePhase}
+              onCompleteBreeding={onCompleteBreeding}
             />
           </div>
         </>
