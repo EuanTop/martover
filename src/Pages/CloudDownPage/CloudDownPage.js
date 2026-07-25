@@ -128,7 +128,14 @@ const CloudDownPage = ({
   onCraterClear,
   gamePhase,
   progressStep,
+  planting,
   onBeginBreeding,
+  onConfigurePlanting,
+  onStartPlanting,
+  onAdvancePlanting,
+  onChooseIntervention,
+  onHarvestPlanting,
+  onUpdateAllocation,
   onCompleteBreeding,
   craterData,
   potatoData,
@@ -611,6 +618,13 @@ const TimestampDisplay = ({ isDarkMode }) => {
               selectedCrater={selectedCrater}
               onModeChange={handlePotatoModeChange}
               gamePhase={gamePhase}
+              planting={planting}
+              onConfigurePlanting={onConfigurePlanting}
+              onStartPlanting={onStartPlanting}
+              onAdvancePlanting={onAdvancePlanting}
+              onChooseIntervention={onChooseIntervention}
+              onHarvestPlanting={onHarvestPlanting}
+              onUpdateAllocation={onUpdateAllocation}
               onCompleteBreeding={onCompleteBreeding}
             />
           </div>

@@ -40,9 +40,16 @@ const AppRoutes = () => {
     phase,
     progressStep,
     selectedCrater,
+    planting,
     selectCrater,
     clearCrater,
     beginBreeding,
+    configurePlanting,
+    startPlanting,
+    advancePlanting,
+    chooseIntervention,
+    harvestPlanting,
+    updateAllocation,
     completeBreeding,
   } = useGameSession();
 
@@ -74,7 +81,14 @@ const AppRoutes = () => {
                 onCraterClear={clearCrater}
                 gamePhase={phase}
                 progressStep={progressStep}
+                planting={planting}
                 onBeginBreeding={beginBreeding}
+                onConfigurePlanting={configurePlanting}
+                onStartPlanting={startPlanting}
+                onAdvancePlanting={advancePlanting}
+                onChooseIntervention={chooseIntervention}
+                onHarvestPlanting={harvestPlanting}
+                onUpdateAllocation={updateAllocation}
                 onCompleteBreeding={completeBreeding}
                 craterData={craterData?.available || []}
                 potatoData={potatoData}

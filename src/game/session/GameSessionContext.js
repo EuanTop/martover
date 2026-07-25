@@ -29,6 +29,42 @@ export const GameSessionProvider = ({ children }) => {
     dispatch({ type: GAME_SESSION_ACTIONS.BEGIN_BREEDING });
   }, []);
 
+  const configurePlanting = useCallback((key, value) => {
+    dispatch({
+      type: GAME_SESSION_ACTIONS.CONFIGURE_PLANTING,
+      payload: { key, value },
+    });
+  }, []);
+
+  const startPlanting = useCallback(() => {
+    dispatch({ type: GAME_SESSION_ACTIONS.START_PLANTING });
+  }, []);
+
+  const advancePlanting = useCallback(() => {
+    dispatch({ type: GAME_SESSION_ACTIONS.ADVANCE_PLANTING });
+  }, []);
+
+  const chooseIntervention = useCallback((intervention) => {
+    dispatch({
+      type: GAME_SESSION_ACTIONS.CHOOSE_INTERVENTION,
+      payload: intervention,
+    });
+  }, []);
+
+  const harvestPlanting = useCallback((harvestSol) => {
+    dispatch({
+      type: GAME_SESSION_ACTIONS.HARVEST_PLANTING,
+      payload: harvestSol,
+    });
+  }, []);
+
+  const updateAllocation = useCallback((key, delta) => {
+    dispatch({
+      type: GAME_SESSION_ACTIONS.UPDATE_ALLOCATION,
+      payload: { key, delta },
+    });
+  }, []);
+
   const completeBreeding = useCallback((potato) => {
     dispatch({ type: GAME_SESSION_ACTIONS.COMPLETE_BREEDING, payload: potato });
   }, []);
@@ -43,6 +79,12 @@ export const GameSessionProvider = ({ children }) => {
     selectCrater,
     clearCrater,
     beginBreeding,
+    configurePlanting,
+    startPlanting,
+    advancePlanting,
+    chooseIntervention,
+    harvestPlanting,
+    updateAllocation,
     completeBreeding,
     resetSession,
   }), [
@@ -50,6 +92,12 @@ export const GameSessionProvider = ({ children }) => {
     selectCrater,
     clearCrater,
     beginBreeding,
+    configurePlanting,
+    startPlanting,
+    advancePlanting,
+    chooseIntervention,
+    harvestPlanting,
+    updateAllocation,
     completeBreeding,
     resetSession,
   ]);

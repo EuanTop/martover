@@ -8,7 +8,16 @@ import {
 
 describe('gameSessionReducer', () => {
   it('moves one run from crater selection through breeding to production', () => {
-    const crater = { id: '01-000001' };
+    const crater = {
+      id: '01-000001',
+      latitude: -61,
+      diameter: 20,
+      layerNumber: 3,
+      rimDegradation: 3,
+      ejectaDegradation: 3,
+      floorDegradation: 2,
+      hasRd: true,
+    };
     const potato = { id: 7, specialParam: '测试性状' };
 
     const withCrater = gameSessionReducer(initialGameSessionState, {
@@ -18,7 +27,24 @@ describe('gameSessionReducer', () => {
     const breeding = gameSessionReducer(withCrater, {
       type: GAME_SESSION_ACTIONS.BEGIN_BREEDING,
     });
-    const production = gameSessionReducer(breeding, {
+    const started = gameSessionReducer(breeding, {
+      type: GAME_SESSION_ACTIONS.START_PLANTING,
+    });
+    const sol2 = gameSessionReducer(started, {
+      type: GAME_SESSION_ACTIONS.ADVANCE_PLANTING,
+    });
+    const intervened = gameSessionReducer(sol2, {
+      type: GAME_SESSION_ACTIONS.CHOOSE_INTERVENTION,
+      payload: 'stabilize',
+    });
+    const sol3 = gameSessionReducer(intervened, {
+      type: GAME_SESSION_ACTIONS.ADVANCE_PLANTING,
+    });
+    const harvested = gameSessionReducer(sol3, {
+      type: GAME_SESSION_ACTIONS.HARVEST_PLANTING,
+      payload: 4,
+    });
+    const production = gameSessionReducer(harvested, {
       type: GAME_SESSION_ACTIONS.COMPLETE_BREEDING,
       payload: potato,
     });
@@ -31,7 +57,10 @@ describe('gameSessionReducer', () => {
       phase: GAME_PHASES.PRODUCTION,
       selectedCrater: crater,
       selectedPotato: potato,
+      generation: 2,
     });
+    expect(production.lineage).toHaveLength(1);
+    expect(production.selectedPotato.tuberCount).toBeGreaterThan(0);
   });
 
   it('does not begin breeding before a crater is selected', () => {
@@ -40,5 +69,29 @@ describe('gameSessionReducer', () => {
     });
 
     expect(nextState).toBe(initialGameSessionState);
+  });
+
+  it('does not complete breeding while harvested tubers are unallocated', () => {
+    const incompleteState = {
+      ...initialGameSessionState,
+      phase: GAME_PHASES.POTATO_BREEDING,
+      planting: {
+        status: 'allocation',
+        harvestResult: { tuberCount: 4 },
+        allocation: {
+          seed: 1,
+          feed: 1,
+          dissect: 0,
+          preserve: 0,
+        },
+      },
+    };
+
+    const nextState = gameSessionReducer(incompleteState, {
+      type: GAME_SESSION_ACTIONS.COMPLETE_BREEDING,
+      payload: { id: 7 },
+    });
+
+    expect(nextState).toBe(incompleteState);
   });
 });
