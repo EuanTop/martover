@@ -58,6 +58,16 @@ npm run dev
 npm run build
 ```
 
+### 运行测试
+```bash
+npm test          # watch 模式
+npx vitest run    # 单次运行
+```
+
+游戏逻辑（基因组、模拟、人体、状态机、坑体几何）由 52 个单元测试覆盖。
+其中若干测试专门锁定容易被静默改坏的契约：`stableHash` 的哈希值、
+种子噪声的分隔符、以及三个种植区必须落在各自地形分带内。
+
 ## 📁 项目结构
 
 ```
@@ -127,6 +137,30 @@ mars-craters/
 │   │   ├── MRIPotatoPage/               # MRI土豆页面
 │   │   ├── PotatoGrid/                  # 土豆网格页面
 │   │   └── Test/                        # 测试页面
+│   │
+│   ├── game/                            # 育种游戏核心（纯逻辑 + 3D 场景）
+│   │   ├── simulation/                  # 模拟层
+│   │   │   ├── genome.js                # 11 维隐藏基因组、跨代漂变、性状冲突
+│   │   │   └── breedingSimulation.js    # SOL 推进、干预、收获、绝收判定
+│   │   ├── human/                       # 人体反馈
+│   │   │   └── humanEngine.js           # 喂食效果、每代衰减、安全边界与病症
+│   │   ├── planting/                    # 环境派生
+│   │   │   └── plantingEngine.js        # 由真实坑数据派生环境向量
+│   │   ├── session/                     # 单局状态机
+│   │   │   ├── gameSessionReducer.js    # 全部状态转移与本局结束条件
+│   │   │   └── GameSessionContext.js    # Provider（动作与状态分层 memo）
+│   │   ├── world/                       # 三维世界
+│   │   │   ├── worldCoordinates.js      # 经纬度到球面坐标的唯一投影
+│   │   │   ├── craterVisualModel.js     # 尺度、地形分带、种植区几何唯一定义
+│   │   │   ├── CraterCultivationScene.js # 程序化坑体、植株、干预反馈
+│   │   │   ├── WorldCameraRig.js        # 星球与坑内镜头转场
+│   │   │   └── CraterViewEffects.js     # 近景地表锐化后处理
+│   │   ├── ui/                          # HUD
+│   │   │   ├── GameHUD.js               # 分阶段 HUD
+│   │   │   └── HumanFeedbackPanel.js    # 右侧人体反馈面板
+│   │   ├── util/                        # 共享工具
+│   │   │   └── deterministic.js         # stableHash / clamp / 种子噪声唯一定义
+│   │   └── data/                        # 陨石坑目录
 │   │
 │   ├── features/                        # 功能模块
 │   │   ├── clouds/                      # 云层系统

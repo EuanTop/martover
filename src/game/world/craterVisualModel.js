@@ -27,8 +27,12 @@ export const ZONE_BANDS = Object.freeze({
 // 只有 1.75 倍，所有坑看起来一样大；同时最小的坑覆盖约 200 km 弧长。
 // 现在整体缩小并拉开区间，恢复相对尺度感。
 export const getCraterDisplayScale = (crater) => {
+  const raw = Number(crater?.diameter);
+  // 只有真正缺值（undefined/NaN）才回落到默认 6 km。
+  // 用 `|| 6` 会把 diameter: 0 这种坏数据也当成平均大小的坑，
+  // 而它应当夹到最小值。
   const diameter = THREE.MathUtils.clamp(
-    Number(crater?.diameter) || 6,
+    Number.isFinite(raw) ? raw : 6,
     MIN_CRATER_DIAMETER_KM,
     MAX_CRATER_DIAMETER_KM
   );
