@@ -327,6 +327,9 @@ const TimestampDisplay = ({ isDarkMode }) => {
           )}
 
           <Canvas
+            // 夹住 devicePixelRatio。Retina 屏默认按 2 甚至 3 倍渲染，
+            // 叠加后处理链后每帧成本翻数倍；2 已经足够清晰。
+            dpr={[1, 2]}
             className={`${styles.gameCanvas} ${
               viewMode === VIEW_MODES.HUMAN
                 ? styles.gameCanvasWithHuman
@@ -397,6 +400,7 @@ const TimestampDisplay = ({ isDarkMode }) => {
               onSelectUse={setSelectedTuberUse}
               onSelectIntervention={setSelectedIntervention}
               onPlantInZone={onPlantInZone}
+              onApplyIntervention={handleApplyIntervention}
               onHarvest={onHarvest}
               onAssignTuber={onAssignTuber}
               onFeedHuman={onFeedHuman}

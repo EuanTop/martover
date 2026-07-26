@@ -85,9 +85,9 @@ export const GameSessionProvider = ({ children }) => {
     dispatch({ type: GAME_SESSION_ACTIONS.RESET });
   }, []);
 
-  const value = useMemo(() => ({
-    ...state,
-    progressStep: getGameProgressStep(state.phase),
+  // 动作回调本身全部是稳定引用，单独 memo 一层，
+  // 使它们不被逐 tick 的状态变化连带失效。
+  const actions = useMemo(() => ({
     selectCrater,
     clearCrater,
     beginBreeding,
@@ -100,7 +100,6 @@ export const GameSessionProvider = ({ children }) => {
     recoverFromFailure,
     resetSession,
   }), [
-    state,
     selectCrater,
     clearCrater,
     beginBreeding,
@@ -113,6 +112,12 @@ export const GameSessionProvider = ({ children }) => {
     recoverFromFailure,
     resetSession,
   ]);
+
+  const value = useMemo(() => ({
+    ...state,
+    progressStep: getGameProgressStep(state.phase),
+    ...actions,
+  }), [state, actions]);
 
   return (
     <GameSessionContext.Provider value={value}>

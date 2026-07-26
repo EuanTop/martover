@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { VIEW_MODES } from '../simulation/breedingSimulation';
@@ -42,7 +42,12 @@ const getCraterCamera = (crater) => {
   };
 };
 
-const WorldCameraRig = ({ controlsRef, viewMode, selectedCrater }) => {
+// 相机装置只关心 viewMode 与 selectedCrater，不关心逐 tick 的模拟状态。
+const WorldCameraRig = React.memo(function WorldCameraRig({
+  controlsRef,
+  viewMode,
+  selectedCrater,
+}) {
   const { camera } = useThree();
   const transitionRef = useRef(null);
   const previousModeRef = useRef(viewMode);
@@ -125,6 +130,6 @@ const WorldCameraRig = ({ controlsRef, viewMode, selectedCrater }) => {
   });
 
   return null;
-};
+});
 
 export default WorldCameraRig;

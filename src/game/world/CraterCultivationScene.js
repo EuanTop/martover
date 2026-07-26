@@ -1678,4 +1678,7 @@ const CraterCultivationScene = ({
   );
 };
 
-export default CraterCultivationScene;
+// 场景在每颗 SOL tick 上都会收到新的 simulation 对象引用。
+// memo 屏障让 React 至少跳过 props 未变时的重渲染
+// （例如 HUD 本地状态变化、光标状态变化）。
+export default React.memo(CraterCultivationScene);

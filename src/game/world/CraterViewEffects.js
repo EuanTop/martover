@@ -1,4 +1,4 @@
-import React, { forwardRef, useMemo } from 'react';
+import React, { forwardRef, useMemo, useEffect } from 'react';
 import { Effect, EffectAttribute } from 'postprocessing';
 import { Uniform } from 'three';
 
@@ -82,8 +82,14 @@ class CraterSurfaceEffect extends Effect {
 const CraterViewEffects = forwardRef((props, ref) => {
   const effect = useMemo(
     () => new CraterSurfaceEffect(props),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [props.contrast, props.sharpness]
   );
+
+  // R3F 明确不 dispose <primitive> 挂载的对象（它假设生命周期由外部管理）。
+  // postprocessing Effect 实现了 dispose()，每次进出近景都泄漏一个 shader material
+  // 和对应的 uniform 资源，因此必须手动释放。
+  useEffect(() => () => effect.dispose(), [effect]);
 
   return <primitive ref={ref} object={effect} />;
 });

@@ -96,12 +96,16 @@ const InterventionButton = ({
   </button>
 );
 
-const GrowthHUD = ({
+// GameSessionContext value 每 tick 全量重建，而子组件没有 memo 屏障，
+// 导致 3D 场景与全部 HUD 组件在每颗 SOL tick 时无条件重渲染。
+// 纯展示组件包上 memo，让 diffing 只落在真正变化的 props 上。
+const GrowthHUD = React.memo(function GrowthHUD({
   simulation,
   selectedIntervention,
   onSelectIntervention,
+  onApplyIntervention,
   onHarvest,
-}) => {
+}) {
   const latestEvent = simulation.events.at(-1);
   const harvestAvailable = simulation.sol >= HARVEST_UNLOCK_SOL;
   const activeZone = getCraterZoneOptions().find(
@@ -141,17 +145,28 @@ const GrowthHUD = ({
       </div>
 
       <div className={styles.interventionPanel}>
-        <div className={styles.interventionTarget}>
-          <span>操作流程</span>
-          <strong>
-            {selectedEffect ? '第 2 步 · 确认' : '第 1 步 · 选工具'}
-          </strong>
-          <small>
-            {selectedEffect
-              ? `点击坑内${activeZone?.label || '种植区'}的彩色作用点`
-              : `${activeZone?.label || '种植区'}等待作用`}
-          </small>
-        </div>
+        {/* 确认干预原本只能点击 3D 作用点，键盘与读屏用户无法完成
+            这一步。这里补一个等价的确认按钮，使整条流程可键盘操作。 */}
+        {selectedEffect ? (
+          <button
+            type="button"
+            className={styles.interventionConfirm}
+            onClick={() => onApplyIntervention(selectedIntervention)}
+            aria-label={
+              `确认对${activeZone?.label || '种植区'}执行${selectedEffect.label}`
+            }
+          >
+            <span>第 2 步 · 确认</span>
+            <strong>{selectedEffect.label}</strong>
+            <small>{selectedEffect.hint}</small>
+          </button>
+        ) : (
+          <div className={styles.interventionTarget}>
+            <span>操作流程</span>
+            <strong>第 1 步 · 选工具</strong>
+            <small>{activeZone?.label || '种植区'}等待作用</small>
+          </div>
+        )}
         <div className={styles.tools}>
           <InterventionButton
             icon={CloudOutlined}
@@ -193,9 +208,10 @@ const GrowthHUD = ({
       </div>
     </>
   );
-};
+});
 
-const PlantingHUD = ({ craterId, onPlantInZone }) => (
+const PlantingHUD = React.memo(function PlantingHUD({ craterId, onPlantInZone }) {
+  return (
   <>
     <div className={styles.plantingLead}>
       <span>{craterId}</span>
@@ -220,15 +236,16 @@ const PlantingHUD = ({ craterId, onPlantInZone }) => (
       })}
     </div>
   </>
-);
+  );
+});
 
-const AllocationHUD = ({
+const AllocationHUD = React.memo(function AllocationHUD({
   simulation,
   selectedUse,
   onSelectUse,
   onAssignTuber,
   onFeedHuman,
-}) => {
+}) {
   const allocation = getTuberAllocation(simulation);
   const assigned = simulation.tuberAssignments.filter(Boolean).length;
 
@@ -279,7 +296,7 @@ const AllocationHUD = ({
       </button>
     </>
   );
-};
+});
 
 const FailureHUD = ({ simulation, preservedCount, onRecover }) => (
   <>
@@ -319,6 +336,7 @@ const GameHUD = ({
   onSelectUse,
   onSelectIntervention,
   onPlantInZone,
+  onApplyIntervention,
   onHarvest,
   onAssignTuber,
   onFeedHuman,
@@ -407,6 +425,7 @@ const GameHUD = ({
           simulation={simulation}
           selectedIntervention={selectedIntervention}
           onSelectIntervention={onSelectIntervention}
+          onApplyIntervention={onApplyIntervention}
           onHarvest={onHarvest}
         />
       )}

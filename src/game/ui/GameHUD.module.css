@@ -170,7 +170,9 @@
 .solReadout small {
   display: block;
   font-size: 9px;
-  opacity: 0.62;
+  /* 0.62 在 #f2e3d0 底色上实测 4.08:1，低于 WCAG AA 要求的 4.5:1。
+     0.66 是这组前景/背景下达标的最低值，统一取 0.68 留出余量。 */
+  opacity: 0.68;
 }
 
 .solReadout strong {
@@ -252,11 +254,46 @@
   text-align: center;
 }
 
+/* 确认干预的键盘等价入口，替代只能鼠标点击的 3D 作用点。 */
+.interventionConfirm {
+  border: 1px solid var(--hud-ink);
+  padding: 8px 7px;
+  background: rgba(255, 205, 176, 0.55);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  text-align: center;
+  gap: 1px;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.interventionConfirm:hover {
+  background: rgba(255, 187, 150, 0.72);
+}
+
+.interventionConfirm span {
+  font-size: 8px;
+  opacity: 0.68;
+}
+
+.interventionConfirm strong {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.interventionConfirm small {
+  font-size: 8px;
+  line-height: 1.35;
+  opacity: 0.78;
+}
+
 .interventionTarget span,
 .interventionTarget small {
   font-size: 7px;
   line-height: 1.3;
-  opacity: 0.64;
+  opacity: 0.68;
 }
 
 .interventionTarget strong {
@@ -574,7 +611,7 @@
 .humanHeader span {
   font-family: monospace;
   font-size: 9px;
-  opacity: 0.58;
+  opacity: 0.68;
 }
 
 .humanHeader strong {
@@ -752,7 +789,7 @@
 }
 
 .sampleTag span {
-  opacity: 0.54;
+  opacity: 0.68;
 }
 
 .sampleTag strong {
@@ -764,7 +801,7 @@
 
 .adaptationCount {
   right: 17px;
-  opacity: 0.62;
+  opacity: 0.68;
 }
 
 .humanOutcome {
@@ -828,7 +865,7 @@
 .humanMetrics span,
 .humanMetrics small {
   font-size: 9px;
-  opacity: 0.62;
+  opacity: 0.68;
 }
 
 .humanMetrics strong {
@@ -965,7 +1002,8 @@
     grid-template-columns: 1fr;
   }
 
-  .interventionTarget {
+  .interventionTarget,
+  .interventionConfirm {
     min-height: 52px;
   }
 
@@ -1056,9 +1094,47 @@
   }
 }
 
+/* 窄屏手机：之前最窄断点是 820px，4 列指标网格在 400px 宽下
+   每列不到 90px，数值与标签会挤在一起。 */
+@media (max-width: 460px) {
+  .humanMetrics {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .humanMetrics div:nth-child(2) {
+    border-right: 0;
+  }
+
+  .humanMetrics div:nth-child(-n + 2) {
+    border-bottom: 1px solid rgba(86, 41, 19, 0.22);
+  }
+
+  .plantingLead strong,
+  .humanHeader strong {
+    font-size: 12px;
+  }
+
+  .tuberSelector button {
+    min-width: 30px;
+  }
+}
+
+/* 所有可交互元素都需要可见的键盘焦点指示。
+   之前只有 .zoneSelector button 有，其余按钮键盘用户看不到位置。 */
+.hud button:focus-visible,
+.hud [tabindex]:focus-visible {
+  outline: 2px solid #7a2d10;
+  outline-offset: 2px;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .scanStatus i,
-  .scanLineActive {
-    animation-duration: 4s;
+  /* 之前仅把两个动画放慢到 4s，仍然在动。
+     偏好降低动效时应当真正停止装饰性动画与过渡。 */
+  .hud *,
+  .hud *::before,
+  .hud *::after {
+    animation-duration: 0.001s !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001s !important;
   }
 }
