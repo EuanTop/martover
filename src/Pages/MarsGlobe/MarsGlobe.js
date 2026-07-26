@@ -426,7 +426,7 @@ const MarsGlobe = ({
         enableZoom={planetControlsEnabled}
         enableRotate={planetControlsEnabled}
         enablePan={false}
-        minDistance={viewMode === VIEW_MODES.PLANET ? 2.8 : 0.2}
+        minDistance={viewMode === VIEW_MODES.PLANET ? 2.8 : 0.03}
         maxDistance={viewMode === VIEW_MODES.PLANET ? 9 : 1.4}
         dampingFactor={0.075}
         enableDamping

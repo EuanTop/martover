@@ -2,7 +2,10 @@ import { useEffect, useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { VIEW_MODES } from '../simulation/breedingSimulation';
-import { getCraterWorldRadius } from './craterVisualModel';
+import {
+  getCraterMountRadius,
+  getCraterWorldRadius,
+} from './craterVisualModel';
 import { MARS_RADIUS, getCraterWorldVector } from './worldCoordinates';
 
 const smoothStep = (value) => value * value * (3 - 2 * value);
@@ -10,10 +13,9 @@ const PLANET_FOV = 75;
 const CRATER_FOV = 56;
 
 const getCraterCamera = (crater) => {
-  // The crater scene is attached just above the unit Mars sphere. Aim at that
-  // same surface point so the local terrain fills the frame without breaking
-  // its connection to the globe.
-  const target = getCraterWorldVector(crater, MARS_RADIUS * 1.006);
+  // 坑体挂载点已下沉到球面之下，相机目标必须跟随同一半径，
+  // 否则镜头会瞄准坑口上方的空气。
+  const target = getCraterWorldVector(crater, MARS_RADIUS * getCraterMountRadius(crater));
   const normal = target.clone().normalize();
   const tangent = new THREE.Vector3(0, 1, 0).cross(normal);
 
@@ -24,8 +26,10 @@ const getCraterCamera = (crater) => {
   tangent.normalize();
   const bitangent = normal.clone().cross(tangent).normalize();
   const craterRadius = getCraterWorldRadius(crater);
-  const cameraHeight = craterRadius * 2.35;
-  const obliqueOffset = craterRadius * 1.95;
+  // 策划 244 行要求 35-45 度的倾斜接近角。这组比例给出 40.0 度：
+  // atan(2.0 / hypot(2.35, 2.35*0.18)) ≈ 40.0。
+  const cameraHeight = craterRadius * 2.0;
+  const obliqueOffset = craterRadius * 2.35;
 
   return {
     fov: CRATER_FOV,
@@ -109,9 +113,12 @@ const WorldCameraRig = ({ controlsRef, viewMode, selectedCrater }) => {
     );
     camera.updateProjectionMatrix();
     camera.lookAt(controls.target);
-    controls.update();
+    // 过渡期间不能调用 controls.update()：OrbitControls 的距离夹取
+    // 不受 controls.enabled 保护，会把相机瞬移到 maxDistance，
+    // 实测吞掉转场前 65% 的轨迹。转场结束后再交回控制权。
 
     if (progress >= 1) {
+      controls.update();
       controls.enabled = viewMode === VIEW_MODES.PLANET;
       transitionRef.current = null;
     }

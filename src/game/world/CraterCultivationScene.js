@@ -9,11 +9,17 @@ import {
   getCraterZoneOptions,
   INTERVENTION_TYPES,
 } from '../simulation/breedingSimulation';
-import { getCraterDisplayScale } from './craterVisualModel';
+import {
+  FLOOR_DEPTH,
+  getCraterDisplayScale,
+  getCraterMountRadius,
+  TERRAIN_BANDS,
+  TERRAIN_RADIUS,
+  ZONE_BANDS,
+} from './craterVisualModel';
 import { calculateCraterPosition } from './worldCoordinates';
 import { useCursorStore } from '../../store';
 
-const TERRAIN_RADIUS = 0.92;
 
 const stableHash = (value) => {
   let hash = 2166136261;
@@ -40,6 +46,41 @@ const seededUnit = (seed, index) => (
   stableHash(`${seed}:${index}`) / 4294967295
 );
 
+// 网格顶点的世界半径是 TERRAIN_RADIUS * normalizedRadius * ellipticity
+// * (1 + contourNoise * smoothStep)，所以直接把世界半径当归一化半径
+// 传给 getTerrainHeight 会差一个 0.92 因子及椭圆度项，实测垂直误差
+// 0.011-0.013，与代码里 +0.018 的抬升余量同量级 —— 植株随机穿地或悬空。
+const getContourFactors = (angle, seed) => {
+  const phase = (seed % 1543) / 1543;
+  const contourNoise = (
+    Math.sin(angle * 3 + phase * 13) * 0.54
+    + Math.cos(angle * 7 - phase * 7) * 0.3
+    + Math.sin(angle * 11 + phase * 19) * 0.16
+  ) * 0.055;
+  const ellipticity = 1 + Math.cos(angle * 2 + phase * 4) * 0.035;
+
+  return { contourNoise, ellipticity };
+};
+
+// 由归一化半径与角度求出真实的世界平面坐标与贴地高度。
+// 所有放置逻辑（植株、干预标记、碎石）都必须走这里。
+const sampleTerrain = (normalizedRadius, angle, seed) => {
+  const { contourNoise, ellipticity } = getContourFactors(angle, seed);
+  const radius = TERRAIN_RADIUS
+    * normalizedRadius
+    * ellipticity
+    * (1 + contourNoise * smoothStep(normalizedRadius));
+  const x = Math.cos(angle) * radius;
+  const z = Math.sin(angle) * radius;
+
+  return {
+    x,
+    z,
+    radius,
+    height: getTerrainHeight(normalizedRadius, x, z, seed),
+  };
+};
+
 const getTerrainHeight = (normalizedRadius, x, z, seed) => {
   const phase = (seed % 997) / 997;
   const angularNoise = (
@@ -53,11 +94,11 @@ const getTerrainHeight = (normalizedRadius, x, z, seed) => {
     + Math.sin((x + z) * 17 + phase * 5) * 0.25
   ) * 0.0018;
 
-  if (normalizedRadius < 0.34) {
-    return -0.14 + surfaceNoise * 0.35;
+  if (normalizedRadius < TERRAIN_BANDS.floor) {
+    return -FLOOR_DEPTH + surfaceNoise * 0.35;
   }
 
-  if (normalizedRadius < 0.72) {
+  if (normalizedRadius < TERRAIN_BANDS.slope) {
     const slope = smoothStep((normalizedRadius - 0.34) / 0.38);
     const erosion = Math.max(0, Math.sin(x * 25 + z * 13 + phase * 31))
       * Math.sin(slope * Math.PI)
@@ -85,34 +126,43 @@ const getTerrainHeight = (normalizedRadius, x, z, seed) => {
   );
 };
 
+// 地形色板与暂存色提到模块级。旧实现每个顶点都 new 四个
+// THREE.Color 再 clone 一次，3265 个顶点约 1.3 万次分配，
+// 每次进入近景都要走一遍。
+const TERRAIN_PALETTE = Object.freeze({
+  floor: new THREE.Color('#3a2725'),
+  slope: new THREE.Color('#56352c'),
+  rim: new THREE.Color('#744638'),
+  apron: new THREE.Color('#634034'),
+});
+
 const getTerrainColor = (
   normalizedRadius,
   height,
   x,
   z,
   seed,
-  layerCount
+  layerCount,
+  // 调用方传入复用的 Color 实例；缺省时才新建。
+  target = new THREE.Color()
 ) => {
-  const floor = new THREE.Color('#3a2725');
-  const slope = new THREE.Color('#56352c');
-  const rim = new THREE.Color('#744638');
-  const apron = new THREE.Color('#634034');
-  let color;
+  const { floor, slope, rim, apron } = TERRAIN_PALETTE;
+  const color = target;
 
-  if (normalizedRadius < 0.34) {
-    color = floor.clone().lerp(slope, normalizedRadius * 0.22);
-  } else if (normalizedRadius < 0.72) {
-    color = floor.clone().lerp(
+  if (normalizedRadius < TERRAIN_BANDS.floor) {
+    color.copy(floor).lerp(slope, normalizedRadius * 0.22);
+  } else if (normalizedRadius < TERRAIN_BANDS.slope) {
+    color.copy(floor).lerp(
       slope,
       smoothStep((normalizedRadius - 0.34) / 0.38)
     );
-  } else if (normalizedRadius < 0.86) {
-    color = slope.clone().lerp(
+  } else if (normalizedRadius < TERRAIN_BANDS.rim) {
+    color.copy(slope).lerp(
       rim,
       smoothStep((normalizedRadius - 0.72) / 0.1)
     );
   } else {
-    color = rim.clone().lerp(
+    color.copy(rim).lerp(
       apron,
       smoothStep((normalizedRadius - 0.86) / 0.14)
     );
@@ -157,32 +207,23 @@ const createCraterTerrainGeometry = (crater) => {
 
   colors.push(centerColor.r, centerColor.g, centerColor.b);
 
+  // 单个复用实例贯穿全部顶点。
+  const scratchColor = new THREE.Color();
+
   for (let ring = 1; ring <= radialSegments; ring += 1) {
     const normalizedRadius = ring / radialSegments;
 
     for (let segment = 0; segment < angularSegments; segment += 1) {
       const angle = (segment / angularSegments) * Math.PI * 2;
-      const phase = (seed % 1543) / 1543;
-      const contourNoise = (
-        Math.sin(angle * 3 + phase * 13) * 0.54
-        + Math.cos(angle * 7 - phase * 7) * 0.3
-        + Math.sin(angle * 11 + phase * 19) * 0.16
-      ) * 0.055;
-      const ellipticity = 1 + Math.cos(angle * 2 + phase * 4) * 0.035;
-      const radius = TERRAIN_RADIUS
-        * normalizedRadius
-        * ellipticity
-        * (1 + contourNoise * smoothStep(normalizedRadius));
-      const x = Math.cos(angle) * radius;
-      const z = Math.sin(angle) * radius;
-      const height = getTerrainHeight(normalizedRadius, x, z, seed);
+      const { x, z, height } = sampleTerrain(normalizedRadius, angle, seed);
       const color = getTerrainColor(
         normalizedRadius,
         height,
         x,
         z,
         seed,
-        layerCount
+        layerCount,
+        scratchColor
       );
 
       positions.push(
@@ -239,20 +280,43 @@ const createCraterTerrainGeometry = (crater) => {
   return geometry;
 };
 
-const createBlendTexture = () => {
+// 坑缘遮罩必须不规则（策划 247 行禁止规则圆环）。
+// 旧实现是严格同心圆渐变，把地形网格已经做出的不规则外沿
+// 又抹回成一个完美的圆。这里改为按角度调制淡出半径，
+// 并与地形轮廓噪声同源同相位，使遮罩边界跟着地貌起伏。
+const createBlendTexture = (seed = 1) => {
+  const size = 256;
   const canvas = document.createElement('canvas');
-  canvas.width = 256;
-  canvas.height = 256;
+  canvas.width = size;
+  canvas.height = size;
   const context = canvas.getContext('2d');
-  const gradient = context.createRadialGradient(128, 128, 62, 128, 128, 128);
+  const image = context.createImageData(size, size);
+  const center = size / 2;
 
-  gradient.addColorStop(0, '#ffffff');
-  gradient.addColorStop(0.65, '#ffffff');
-  gradient.addColorStop(0.8, '#d2d2d2');
-  gradient.addColorStop(0.91, '#5f5f5f');
-  gradient.addColorStop(1, '#000000');
-  context.fillStyle = gradient;
-  context.fillRect(0, 0, 256, 256);
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const dx = (x - center) / center;
+      const dy = (y - center) / center;
+      const distance = Math.hypot(dx, dy);
+      const angle = Math.atan2(dy, dx);
+      const { contourNoise, ellipticity } = getContourFactors(angle, seed);
+      // 淡出区间随角度移动，因此没有任何一圈是完美的圆。
+      const edge = ellipticity * (1 + contourNoise * 1.9);
+      const inner = edge * 0.66;
+      const alpha = 1 - smoothStep(
+        (distance - inner) / Math.max(0.0001, edge - inner)
+      );
+      const offset = (y * size + x) * 4;
+      const value = Math.round(THREE.MathUtils.clamp(alpha, 0, 1) * 255);
+
+      image.data[offset] = value;
+      image.data[offset + 1] = value;
+      image.data[offset + 2] = value;
+      image.data[offset + 3] = 255;
+    }
+  }
+
+  context.putImageData(image, 0, 0);
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.NoColorSpace;
@@ -265,7 +329,9 @@ const CraterDebris = ({ seed }) => {
   const rocks = useMemo(() => (
     Array.from({ length: 30 }, (_, index) => {
       const angle = seededUnit(seed, index * 4) * Math.PI * 2;
-      const radius = 0.7 + seededUnit(seed, index * 4 + 1) * 0.3;
+      // 归一化半径收进 0.62-0.97：旧值 0.7-1.0 是世界半径，
+      // 超出网格外沿 0.92，实测 11/30 块碎石飘在裸火星球面上。
+      const radius = 0.62 + seededUnit(seed, index * 4 + 1) * 0.35;
       const size = 0.012 + seededUnit(seed, index * 4 + 2) * 0.026;
 
       return {
@@ -286,15 +352,11 @@ const CraterDebris = ({ seed }) => {
     const rotation = new THREE.Euler();
 
     rocks.forEach((rock, index) => {
+      const sample = sampleTerrain(rock.radius, rock.angle, seed);
       position.set(
-        Math.cos(rock.angle) * rock.radius,
-        getTerrainHeight(
-          rock.radius,
-          Math.cos(rock.angle) * rock.radius,
-          Math.sin(rock.angle) * rock.radius,
-          seed
-        ) + rock.size * 0.35,
-        Math.sin(rock.angle) * rock.radius
+        sample.x,
+        sample.height + rock.size * 0.35,
+        sample.z
       );
       rotation.set(
         seededUnit(seed, index + 91) * 0.8,
@@ -344,20 +406,15 @@ const zoneLayout = Object.freeze({
   },
 });
 
+// 种植前的区域标记落在该区植株群落的重心上，
+// 因此玩家点选的位置就是植株之后真正出现的位置。
 const getZonePosition = (zone, seed) => {
-  const layout = zoneLayout[zone];
-  const x = Math.cos(layout.angle) * layout.radius;
-  const z = Math.sin(layout.angle) * layout.radius;
+  const anchor = getZoneAnchor(zone, seed);
 
   return [
-    x,
-    getTerrainHeight(
-      layout.radius,
-      x,
-      z,
-      seed
-    ) + 0.025,
-    z,
+    anchor.position[0],
+    anchor.position[1] + 0.025,
+    anchor.position[2],
   ];
 };
 
@@ -442,38 +499,56 @@ const PlantingTarget = ({ option, seed, onPlantInZone }) => {
   );
 };
 
+const ROOT_ANGLES = [0.2, 2.35, 4.45];
+
+// 三条根须合并成一个 lineSegments，而不是三个 drei <Line>。
+// 每个 <Line> 都是完整的 Line2，自带材质与 resolution uniform；
+// 12 株时仅根须就是 36 个绘制单元。
 const RootLines = ({ maturity, stress }) => {
-  const rootColor = stress > 58 ? '#b74a2b' : '#f1d7c6';
+  const geometryRef = useRef();
+  const geometry = useMemo(() => new THREE.BufferGeometry(), []);
+
+  useEffect(() => () => geometry.dispose(), [geometry]);
+
+  const positions = useMemo(() => {
+    const points = [];
+
+    ROOT_ANGLES.forEach((angle, index) => {
+      const length = 0.075 + maturity * (0.12 + index * 0.015);
+      const mid = [
+        Math.cos(angle + 0.2) * length * 0.55,
+        0.002,
+        Math.sin(angle + 0.2) * length * 0.55,
+      ];
+      const tip = [
+        Math.cos(angle) * length,
+        -0.006,
+        Math.sin(angle) * length,
+      ];
+
+      points.push(0, 0.008, 0, ...mid, ...mid, ...tip);
+    });
+
+    return new Float32Array(points);
+  }, [maturity]);
+
+  useEffect(() => {
+    geometry.setAttribute(
+      'position',
+      new THREE.BufferAttribute(positions, 3)
+    );
+    geometry.attributes.position.needsUpdate = true;
+  }, [geometry, positions]);
 
   return (
-    <group>
-      {[0.2, 2.35, 4.45].map((angle, index) => {
-        const length = 0.075 + maturity * (0.12 + index * 0.015);
-
-        return (
-          <Line
-            key={angle}
-            points={[
-              [0, 0.008, 0],
-              [
-                Math.cos(angle + 0.2) * length * 0.55,
-                0.002,
-                Math.sin(angle + 0.2) * length * 0.55,
-              ],
-              [
-                Math.cos(angle) * length,
-                -0.006,
-                Math.sin(angle) * length,
-              ],
-            ]}
-            color={rootColor}
-            transparent
-            opacity={0.48 + maturity * 0.36}
-            lineWidth={0.8}
-          />
-        );
-      })}
-    </group>
+    <lineSegments geometry={geometry} ref={geometryRef}>
+      <lineBasicMaterial
+        color={stress > 58 ? '#b74a2b' : '#f1d7c6'}
+        transparent
+        opacity={0.48 + maturity * 0.36}
+        depthWrite={false}
+      />
+    </lineSegments>
   );
 };
 
@@ -537,7 +612,9 @@ const TuberCluster = ({ growth, stress, index }) => {
               speed={0.7 + index * 0.015}
               metalness={0.08}
               roughness={0.66}
-              geometryDetail={28}
+              // 块茎在地下且尺寸很小，28 段细分在 12 株时是
+              // 6 万顶点；16 段视觉上无差别。
+              geometryDetail={16}
             />
           </group>
         );
@@ -685,53 +762,104 @@ const PotatoPlant = ({
   );
 };
 
-const getGrowthPositions = (zone, seed) => (
-  Array.from({ length: 6 }, (_, index) => {
-    const randomAngle = seededUnit(seed, index * 5);
-    const randomRadius = seededUnit(seed, index * 5 + 1);
-    const tangentJitter = seededUnit(seed, index * 5 + 2) - 0.5;
-    let angle;
-    let radius;
+// 三个种植区必须有互不相同的分布形态（策划 251-254 行）。
+// 旧实现三个分支共用同一个黄金角递推，实测角覆盖都是 ~266°，
+// 也就是三种区域都是绕坑一整圈的均匀环，画面上无法区分；
+// 且 floor 分支半径落在 0.519-0.663，按地形分带全在坑壁上，
+// 选「坑底」时没有一株真的种在坑底。
+const getGrowthPositions = (zone, seed, plantCount = 6) => {
+  const band = ZONE_BANDS[zone] || ZONE_BANDS.shadow;
+  const spanAngle = zoneLayout[zone]?.angle ?? 0;
 
-    const goldenAngle = 2.399963;
+  return Array.from({ length: plantCount }, (_, index) => {
+    const spread = plantCount > 1 ? index / (plantCount - 1) : 0.5;
+    const jitterA = seededUnit(seed, index * 5) - 0.5;
+    const jitterR = seededUnit(seed, index * 5 + 1);
+    let angle;
+    let normalizedRadius;
 
     if (zone === CRATER_ZONES.RIM) {
-      angle = zoneLayout[zone].angle + index * goldenAngle
-        + (randomAngle - 0.5) * 0.22;
-      radius = 0.68 + randomRadius * 0.2;
+      // 坑缘：沿破碎外缘展开的弧带，只占约 96° 的受限扇区。
+      angle = spanAngle + (spread - 0.5) * 1.68 + jitterA * 0.12;
+      normalizedRadius = band.inner
+        + (band.outer - band.inner) * (0.35 + jitterR * 0.65);
     } else if (zone === CRATER_ZONES.SHADOW) {
-      angle = zoneLayout[zone].angle + index * goldenAngle
-        + (randomAngle - 0.5) * 0.28;
-      radius = 0.39 + randomRadius * 0.25;
+      // 坑壁：沿坡面等高线的弯曲带，半径随弧长缓慢下降。
+      angle = spanAngle + (spread - 0.5) * 1.34 + jitterA * 0.1;
+      normalizedRadius = band.outer
+        - (band.outer - band.inner) * (spread * 0.72 + jitterR * 0.24);
     } else {
-      angle = index * goldenAngle + (randomAngle - 0.5) * 0.24;
-      radius = 0.22 + Math.sqrt(randomRadius) * 0.46;
+      // 坑底：有间距的散点群落，用黄金角散布在整个坑底盘内。
+      angle = index * 2.399963 + jitterA * 0.5;
+      normalizedRadius = band.inner
+        + Math.sqrt((index + jitterR) / plantCount)
+          * (band.outer - band.inner);
     }
 
-    angle += tangentJitter * 0.08;
+    const { x, z, height } = sampleTerrain(normalizedRadius, angle, seed);
 
     return {
-      position: [
-        Math.cos(angle) * radius,
-        getTerrainHeight(
-          radius,
-          Math.cos(angle) * radius,
-          Math.sin(angle) * radius,
-          seed
-        ) + 0.018,
-        Math.sin(angle) * radius,
-      ],
+      position: [x, height + 0.006, z],
+      normalizedRadius,
+      angle,
       variant: 0.88 + seededUnit(seed, index * 5 + 4) * 0.22,
       emergenceDelay: index * 0.07 + seededUnit(seed, index * 5 + 3) * 0.11,
     };
-  })
-);
+  });
+};
+
+// 干预标记锚定到植株群落的实际重心，而不是另一套 zoneLayout 半径。
+// 旧实现 floor 标记在 r=0.18、植株在 0.519-0.663，偏离 0.34-0.48，
+// 遮蔽穹顶罩在空地上，被保护的植株露在穹顶外面。
+const getZoneAnchor = (zone, seed, plantCount = 6) => {
+  const plants = getGrowthPositions(zone, seed, plantCount);
+  const meanRadius = plants.reduce(
+    (total, plant) => total + plant.normalizedRadius,
+    0
+  ) / plants.length;
+  const meanAngle = Math.atan2(
+    plants.reduce((total, plant) => total + Math.sin(plant.angle), 0),
+    plants.reduce((total, plant) => total + Math.cos(plant.angle), 0)
+  );
+  const { x, z, height } = sampleTerrain(meanRadius, meanAngle, seed);
+  // 群落的角向与径向跨度，供作用范围包住全部植株。
+  const spread = Math.max(
+    ...plants.map((plant) => Math.hypot(
+      plant.position[0] - x,
+      plant.position[2] - z
+    ))
+  );
+
+  return {
+    position: [x, height, z],
+    normalizedRadius: meanRadius,
+    angle: meanAngle,
+    spread,
+  };
+};
+
+// 收获后用真实块茎数；收获前按坑体规模与活力做一个稳定的预估，
+// 这样植株数量在整代内不会跳动。
+const getPlantCount = (simulation) => {
+  if (simulation.harvestResult) {
+    return THREE.MathUtils.clamp(simulation.harvestResult.tuberCount, 1, 12);
+  }
+
+  return THREE.MathUtils.clamp(
+    Math.round(4 + simulation.vigor / 22),
+    3,
+    10
+  );
+};
 
 const GrowthPatch = ({ simulation, seed }) => {
   const maturity = simulation.growth / 100;
+  // 植株数量由本代实际块茎数驱动，而不是固定 6 株。
+  // 收获前用环境预估的产量，收获后与 tuberCount 对齐。
+  const plantCount = getPlantCount(simulation);
   const plants = useMemo(
-    () => getGrowthPositions(simulation.zone, seed),
-    [seed, simulation.zone]
+    () => getGrowthPositions(simulation.zone, seed, plantCount),
+    [seed, simulation.zone, plantCount]
   );
 
   return (
@@ -759,10 +887,14 @@ const GrowthPatch = ({ simulation, seed }) => {
   );
 };
 
+// 遮蔽旧色 #f7d6c4 与未选中默认色 #fff0df 的 RGB 距离只有 38.3
+// （水 116.8、热 157.8），选中遮蔽后画面几乎没有变化，
+// 玩家无法确认工具已选中。改为明确的紫罗兰色，
+// 并与执行反馈 ShieldSignal 统一为同一个值。
 const INTERVENTION_COLORS = Object.freeze({
   [INTERVENTION_TYPES.WATER]: '#8ed7ef',
   [INTERVENTION_TYPES.HEAT]: '#ff9b5a',
-  [INTERVENTION_TYPES.SHIELD]: '#f7d6c4',
+  [INTERVENTION_TYPES.SHIELD]: '#b98cf0',
 });
 
 const InterventionPreview = ({ type }) => {
@@ -908,9 +1040,9 @@ const InterventionPreview = ({ type }) => {
             args={[0.31, 32, 18, 0, Math.PI * 2, 0, Math.PI / 2]}
           />
           <meshBasicMaterial
-            color="#f7d6c4"
+            color="#b98cf0"
             transparent
-            opacity={0.1}
+            opacity={0.14}
             side={THREE.DoubleSide}
             depthWrite={false}
           />
@@ -933,7 +1065,7 @@ const InterventionPreview = ({ type }) => {
         >
           <torusGeometry args={[0.31, 0.007, 8, 48]} />
           <meshBasicMaterial
-            color="#f7d6c4"
+            color="#b98cf0"
             transparent
             opacity={0.72}
             depthWrite={false}
@@ -1281,9 +1413,9 @@ const ShieldSignal = () => {
           args={[0.32, 40, 24, 0, Math.PI * 2, 0, Math.PI / 2]}
         />
         <meshBasicMaterial
-          color="#f2b29b"
+          color="#b98cf0"
           transparent
-          opacity={0.1}
+          opacity={0.14}
           side={THREE.DoubleSide}
           depthWrite={false}
         />
@@ -1439,29 +1571,37 @@ const CraterCultivationScene = ({
   onAssignTuber,
   onApplyIntervention,
 }) => {
+  const seed = useMemo(() => getCraterSeed(crater), [crater.id]);
+  const displayScale = useMemo(
+    () => getCraterDisplayScale(crater),
+    [crater.id]
+  );
+  // 挂载点下沉，使坑底真正低于球面而不是浮在球面之上。
+  // 旧值 1.006 让所有 12 km 以下的坑坑底都在球面外侧。
+  const mountRadius = useMemo(
+    () => getCraterMountRadius(crater),
+    [crater.id]
+  );
   const position = useMemo(() => (
     new THREE.Vector3(...calculateCraterPosition(
       crater.latitude,
       crater.longitude,
-      1.006
+      mountRadius
     ))
-  ), [crater.latitude, crater.longitude]);
+  ), [crater.latitude, crater.longitude, mountRadius]);
   const quaternion = useMemo(() => (
     new THREE.Quaternion().setFromUnitVectors(
       new THREE.Vector3(0, 1, 0),
       position.clone().normalize()
     )
   ), [position]);
+  // 依赖 crater.id 而非整个 crater 对象：上游任何重建都会
+  // 触发 3265 顶点的全量地形重算。
   const terrainGeometry = useMemo(
     () => createCraterTerrainGeometry(crater),
-    [crater]
+    [crater.id]
   );
-  const blendTexture = useMemo(() => createBlendTexture(), []);
-  const seed = useMemo(() => getCraterSeed(crater), [crater]);
-  const displayScale = useMemo(
-    () => getCraterDisplayScale(crater),
-    [crater]
-  );
+  const blendTexture = useMemo(() => createBlendTexture(seed), [seed]);
   const options = getCraterZoneOptions();
   const isPlanting = simulation.stage === BREEDING_STAGES.PLANTING;
   const isGrowing = simulation.stage === BREEDING_STAGES.GROWING;
@@ -1486,12 +1626,9 @@ const CraterCultivationScene = ({
           alphaMap={blendTexture}
           transparent
           alphaTest={0.025}
-          depthWrite={false}
           roughness={1}
           metalness={0}
           side={THREE.DoubleSide}
-          polygonOffset
-          polygonOffsetFactor={-1}
         />
       </mesh>
 
