@@ -1,3 +1,5 @@
+import { clamp, signedNoise, stableHash } from '../util/deterministic';
+
 // 品系隐藏基因维度（策划 §5）。这些维度不直接作为主要玩家界面，
 // 而是驱动派生出的稳定/繁殖/表达等可见读数。
 //
@@ -33,25 +35,8 @@ export const TRAIT_SLOT_COUNT = 3;
 // 突变负荷达到此值后品系进入不育风险区。
 export const STERILITY_THRESHOLD = 82;
 
-const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
-
-const stableHash = (value) => {
-  let hash = 2166136261;
-  const text = String(value);
-
-  for (let index = 0; index < text.length; index += 1) {
-    hash ^= text.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-
-  return hash >>> 0;
-};
-
 // 确定性单位噪声，取值 -1..1。同一 seed 与 salt 永远给出同一结果，
 // 使整条品系可复现，同时让每代的突变方向互不相同。
-const signedNoise = (seed, salt) => (
-  (stableHash(`${seed}|${salt}`) / 4294967295) * 2 - 1
-);
 
 export const createBaseGenome = () => ({
   dnaRepair: 24,

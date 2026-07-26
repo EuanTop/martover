@@ -18,20 +18,9 @@ import {
   ZONE_BANDS,
 } from './craterVisualModel';
 import { calculateCraterPosition } from './worldCoordinates';
+import { seededUnit, stableHash } from '../util/deterministic';
 import { useCursorStore } from '../../store';
 
-
-const stableHash = (value) => {
-  let hash = 2166136261;
-  const text = String(value);
-
-  for (let index = 0; index < text.length; index += 1) {
-    hash ^= text.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-
-  return hash >>> 0;
-};
 
 const smoothStep = (value) => {
   const clamped = THREE.MathUtils.clamp(value, 0, 1);
@@ -40,10 +29,6 @@ const smoothStep = (value) => {
 
 const getCraterSeed = (crater) => stableHash(
   crater?.id || crater?.CRATER_ID || 'martover-crater'
-);
-
-const seededUnit = (seed, index) => (
-  stableHash(`${seed}:${index}`) / 4294967295
 );
 
 // 网格顶点的世界半径是 TERRAIN_RADIUS * normalizedRadius * ellipticity

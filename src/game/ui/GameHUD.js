@@ -15,6 +15,7 @@ import {
   canFeedHuman,
   GENERATION_LENGTH_SOLS,
   getCraterZoneOptions,
+  getFailureRisk,
   getTuberAllocation,
   HARVEST_UNLOCK_SOL,
   INTERVENTION_EFFECTS,
@@ -128,6 +129,9 @@ const GrowthHUD = React.memo(function GrowthHUD({
           <StatusBar label="活力" value={simulation.vigor} />
           <StatusBar label="压力" value={simulation.stress} />
           <StatusBar label="表达" value={simulation.expression} />
+          {/* 绝收风险原本被计算但从不显示；既然绝收现在真的会发生，
+              玩家需要在下一次干预前看到它。 */}
+          <StatusBar label="绝收风险" value={getFailureRisk(simulation)} />
         </div>
       </div>
 

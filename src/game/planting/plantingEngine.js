@@ -1,3 +1,5 @@
+import { clamp, stableHash } from '../util/deterministic';
+
 export const PLANTING_STATUS = Object.freeze({
   CONFIGURATION: 'configuration',
   GROWTH: 'growth',
@@ -35,23 +37,9 @@ const CONFIG_OPTIONS = Object.freeze({
 
 const HARVEST_SOLS = Object.freeze([3, 4]);
 
-const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
-
 const toNumber = (value, fallback = 0) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
-};
-
-const stableHash = (value) => {
-  let hash = 2166136261;
-  const text = String(value);
-
-  for (let index = 0; index < text.length; index += 1) {
-    hash ^= text.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-
-  return hash >>> 0;
 };
 
 const deterministicUnit = (seed) => stableHash(seed) / 4294967295;

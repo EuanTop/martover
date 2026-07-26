@@ -1,3 +1,4 @@
+import { clamp, stableHash } from '../util/deterministic';
 import { deriveCraterEnvironment } from '../planting/plantingEngine';
 import { getHumanBreedingModifier } from '../human/humanEngine';
 import {
@@ -44,7 +45,6 @@ export const TUBER_USES = Object.freeze({
 
 export const GENERATION_LENGTH_SOLS = 30;
 export const HARVEST_UNLOCK_SOL = 18;
-
 
 const EVENT_SOLS = Object.freeze([1, 6, 12, 18, 24, 30]);
 
@@ -108,23 +108,9 @@ export const INTERVENTION_EFFECTS = Object.freeze({
   },
 });
 
-const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
-
 const toNumber = (value, fallback = 0) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
-};
-
-const stableHash = (value) => {
-  let hash = 2166136261;
-  const text = String(value);
-
-  for (let index = 0; index < text.length; index += 1) {
-    hash ^= text.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-
-  return hash >>> 0;
 };
 
 const getCraterId = (crater) => crater?.id || crater?.CRATER_ID || 'UNKNOWN';

@@ -1,4 +1,4 @@
-const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+import { clamp } from '../util/deterministic';
 
 export const HUMAN_RESPONSE_STATES = Object.freeze({
   BASELINE: 'baseline',
