@@ -56,6 +56,9 @@ const CloudDownPage = ({
   onAssignTuber,
   onFeedHuman,
   onNextGeneration,
+  onRecover,
+  preservedSamples,
+  outcome,
   craterData,
   appReady
 }) => {
@@ -398,6 +401,9 @@ const TimestampDisplay = ({ isDarkMode }) => {
               onAssignTuber={onAssignTuber}
               onFeedHuman={onFeedHuman}
               onNextGeneration={onNextGeneration}
+              onRecover={onRecover}
+              preservedSamples={preservedSamples}
+              outcome={outcome}
             />
           )}
           

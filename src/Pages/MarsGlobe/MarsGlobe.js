@@ -92,24 +92,16 @@ const Mars = ({
     const vertices = [];
     const labels = [];
     
-    // 经线和经度标签
-    for (let i = -180; i < 180; i += 30) {  // 改为 < 180，避免重复
-      const theta = i * Math.PI / 180;
+    // 经线和经度标签。与陨石坑标记共用 calculateCraterPosition，
+    // 避免网格与坑点各自使用一套投影而互相错位。
+    for (let i = -180; i < 180; i += 30) {
       for (let j = -90; j <= 90; j++) {
-        const phi = j * Math.PI / 180;
-        const x = Math.cos(phi) * Math.cos(theta);
-        const y = Math.sin(phi);
-        const z = Math.cos(phi) * Math.sin(theta);
-        vertices.push(x, y, z);
+        vertices.push(...calculateCraterPosition(j, i));
       }
-      
+
       // 只在赤道位置添加经度标签
       labels.push({
-        position: [
-          1.1 * Math.cos(theta), 
-          0,
-          1.1 * Math.sin(theta)
-        ],
+        position: calculateCraterPosition(0, i, 1.1),
         text: `${i > 0 ? i + '°E' : i < 0 ? Math.abs(i) + '°W' : '0°'}`,
         type: 'longitude',
         scale: 0.8
@@ -118,39 +110,23 @@ const Mars = ({
     
     // 纬线和纬度标签
     for (let i = -90; i <= 90; i += 30) {
-      // 跳过赤道 (0度) 的标签，因为已经有经度的0度标签了
-      if (i === 0) {
-        // 仍然需要添加纬线的顶点
-        for (let j = -180; j <= 180; j++) {
-          const theta = j * Math.PI / 180;
-          const phi = i * Math.PI / 180;
-          const x = Math.cos(phi) * Math.cos(theta);
-          const y = Math.sin(phi);
-          const z = Math.cos(phi) * Math.sin(theta);
-          vertices.push(x, y, z);
-        }
-        continue; // 跳过添加标签
-      }
-      
-      const phi = i * Math.PI / 180;
       for (let j = -180; j <= 180; j++) {
-        const theta = j * Math.PI / 180;
-        const x = Math.cos(phi) * Math.cos(theta);
-        const y = Math.sin(phi);
-        const z = Math.cos(phi) * Math.sin(theta);
-        vertices.push(x, y, z);
+        vertices.push(...calculateCraterPosition(i, j));
       }
-      
+
+      // 跳过赤道 (0度) 的标签，因为已经有经度的0度标签了
+      if (i === 0) continue;
+
+      const isPole = i === 90 || i === -90;
+
       // 添加纬度标签，包括极点
       labels.push({
-        position: [
-          i === 90 || i === -90 ? 0 : 1.1 * Math.cos(phi),  // 极点位置特殊处理
-          1.1 * Math.sin(phi),
-          0
-        ],
+        position: isPole
+          ? [0, 1.1 * Math.sign(i), 0]
+          : calculateCraterPosition(i, 0, 1.1),
         text: `${i > 0 ? i + '°N' : Math.abs(i) + '°S'}`,
         type: 'latitude',
-        scale: i === 90 || i === -90 ? 0.6 : 0.8  // 极点标签稍小
+        scale: isPole ? 0.6 : 0.8  // 极点标签稍小
       });
     }
 

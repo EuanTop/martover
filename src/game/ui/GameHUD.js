@@ -22,6 +22,7 @@ import {
   TUBER_USES,
   VIEW_MODES,
 } from '../simulation/breedingSimulation';
+import { RUN_OUTCOMES } from '../session/gameSessionReducer';
 import HumanFeedbackPanel from './HumanFeedbackPanel';
 import styles from './GameHUD.module.css';
 
@@ -280,6 +281,32 @@ const AllocationHUD = ({
   );
 };
 
+const FailureHUD = ({ simulation, preservedCount, onRecover }) => (
+  <>
+    <div className={styles.plantingLead}>
+      <span>{simulation.harvestResult?.originCraterId}</span>
+      <strong>
+        {simulation.harvestResult?.sterile ? '品系不育' : '本代绝收'}
+      </strong>
+      <small>{simulation.events.at(-1)?.text}</small>
+    </div>
+    <div className={styles.failureActions}>
+      <p>
+        {preservedCount > 0
+          ? `保存库中还有 ${preservedCount} 份样本，可以回退到上一个稳定品系。`
+          : '没有保存样本可以回退，这条品系到此结束。'}
+      </p>
+      <button
+        type="button"
+        className={styles.primaryAction}
+        onClick={onRecover}
+      >
+        {preservedCount > 0 ? '取出保存样本重新开始' : '结束本局'}
+      </button>
+    </div>
+  </>
+);
+
 const GameHUD = ({
   viewMode,
   selectedCrater,
@@ -296,7 +323,30 @@ const GameHUD = ({
   onAssignTuber,
   onFeedHuman,
   onNextGeneration,
+  preservedSamples = [],
+  onRecover,
+  outcome = RUN_OUTCOMES.ACTIVE,
 }) => {
+  // 本局结束优先于其他所有界面。
+  if (outcome !== RUN_OUTCOMES.ACTIVE) {
+    return (
+      <div className={`${styles.hud} ${styles.promptHud}`}>
+        <span>第 {generation} 代 · 本局结束</span>
+        <strong>
+          {outcome === RUN_OUTCOMES.HUMAN_LOST
+            ? '受试者已无法继续接受反馈'
+            : '品系已经断绝'}
+        </strong>
+        <small>
+          共延续 {lineage.length} 代。
+          {outcome === RUN_OUTCOMES.HUMAN_LOST
+            ? '生命状态归零，或生理年龄超过了预计寿命。'
+            : '没有可留种的块茎，也没有保存样本可以回退。'}
+        </small>
+      </div>
+    );
+  }
+
   if (viewMode === VIEW_MODES.PLANET && selectedCrater) return null;
 
   if (viewMode === VIEW_MODES.HUMAN) {
@@ -325,6 +375,19 @@ const GameHUD = ({
   }
 
   if (!simulation) return null;
+
+  // 绝收或不育：本代没有块茎可分配，玩家必须依赖保存样本回退。
+  if (simulation.stage === BREEDING_STAGES.FAILED) {
+    return (
+      <div className={`${styles.hud} ${styles.plantingHud}`}>
+        <FailureHUD
+          simulation={simulation}
+          preservedCount={preservedSamples.length}
+          onRecover={onRecover}
+        />
+      </div>
+    );
+  }
 
   if (simulation.stage === BREEDING_STAGES.PLANTING) {
     return (

@@ -70,8 +70,10 @@ describe('breedingSimulation', () => {
     expect(advanced.growthAcceleration).toBe(
       INTERVENTION_EFFECTS.heat.growth
     );
-    expect(advanced.growth).toBe(
-      Math.round((1 / 30) * 100 + INTERVENTION_EFFECTS.heat.growth)
+    // growth 内部保留浮点，只在 HUD 显示时取整。
+    expect(advanced.growth).toBeCloseTo(
+      (1 / 30) * 100 + INTERVENTION_EFFECTS.heat.growth,
+      10
     );
   });
 
@@ -85,16 +87,19 @@ describe('breedingSimulation', () => {
       const effect = INTERVENTION_EFFECTS[type];
       const result = applyIntervention(planted, type);
 
-      expect(result.vigor).toBe(Math.min(100, planted.vigor + effect.vigor));
-      expect(result.stress).toBe(Math.max(
+      expect(result.vigor).toBeCloseTo(
+        Math.min(100, planted.vigor + effect.vigor),
+        10
+      );
+      expect(result.stress).toBeCloseTo(Math.max(
         0,
         Math.min(100, planted.stress + effect.stress)
-      ));
-      expect(result.expression).toBe(Math.max(
+      ), 10);
+      expect(result.expression).toBeCloseTo(Math.max(
         0,
         Math.min(100, planted.expression + effect.expression)
-      ));
-      expect(result.growth).toBe(effect.growth);
+      ), 10);
+      expect(result.growth).toBeCloseTo(Math.max(0, effect.growth), 10);
     });
   });
 

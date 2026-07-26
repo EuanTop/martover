@@ -54,6 +54,9 @@ const AppRoutes = () => {
     assignTuber,
     feedHuman,
     startNextGeneration,
+    recoverFromFailure,
+    preservedSamples,
+    outcome,
   } = useGameSession();
 
   // 显示加载状态
@@ -95,6 +98,9 @@ const AppRoutes = () => {
                 onAssignTuber={assignTuber}
                 onFeedHuman={feedHuman}
                 onNextGeneration={startNextGeneration}
+                onRecover={recoverFromFailure}
+                preservedSamples={preservedSamples}
+                outcome={outcome}
                 craterData={craterData?.available || []}
                 appReady={appReady} 
               />

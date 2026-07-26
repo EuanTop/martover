@@ -77,6 +77,10 @@ export const GameSessionProvider = ({ children }) => {
     dispatch({ type: GAME_SESSION_ACTIONS.START_NEXT_GENERATION });
   }, []);
 
+  const recoverFromFailure = useCallback(() => {
+    dispatch({ type: GAME_SESSION_ACTIONS.RECOVER_FROM_FAILURE });
+  }, []);
+
   const resetSession = useCallback(() => {
     dispatch({ type: GAME_SESSION_ACTIONS.RESET });
   }, []);
@@ -93,6 +97,7 @@ export const GameSessionProvider = ({ children }) => {
     assignTuber,
     feedHuman,
     startNextGeneration,
+    recoverFromFailure,
     resetSession,
   }), [
     state,
@@ -105,6 +110,7 @@ export const GameSessionProvider = ({ children }) => {
     assignTuber,
     feedHuman,
     startNextGeneration,
+    recoverFromFailure,
     resetSession,
   ]);
 

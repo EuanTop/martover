@@ -837,6 +837,47 @@
   font-weight: 400;
 }
 
+.failureActions {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+}
+
+.failureActions p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.boundaryWarning {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid #6d2410;
+  background: rgba(109, 36, 16, 0.16);
+}
+
+.boundaryWarning span {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: #5e1f0d;
+}
+
+.boundaryWarning strong {
+  font-size: 13px;
+  font-weight: 500;
+  color: #4d1a0a;
+}
+
+.boundaryWarning small {
+  font-size: 11px;
+  line-height: 1.45;
+  color: #5e1f0d;
+}
+
 .humanOutcome > .primaryAction {
   width: 100%;
   min-height: 42px;

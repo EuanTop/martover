@@ -18,14 +18,15 @@ const phaseLabels = Object.freeze({
 
 const metricDefinitions = Object.freeze([
   {
-    key: 'lifespanYears',
-    label: '预计寿命',
-    unit: '年',
+    key: 'vitality',
+    label: '生命状态',
+    unit: '',
   },
   {
-    key: 'tissueRepair',
-    label: '组织修复',
-    unit: '',
+    key: 'biologicalAge',
+    label: '生理年龄',
+    unit: '岁',
+    precision: 1,
   },
   {
     key: 'neuralClarity',
@@ -39,9 +40,15 @@ const metricDefinitions = Object.freeze([
   },
 ]);
 
-const formatDelta = (value) => {
-  if (!value) return '±0';
-  return value > 0 ? `+${value}` : String(value);
+const formatValue = (value, precision = 0) => (
+  typeof value === 'number' ? value.toFixed(precision) : '--'
+);
+
+const formatDelta = (value, precision = 0) => {
+  const rounded = Number((value || 0).toFixed(precision));
+
+  if (!rounded) return '±0';
+  return rounded > 0 ? `+${rounded}` : String(rounded);
 };
 
 const HumanFeedbackPanel = ({
@@ -54,6 +61,7 @@ const HumanFeedbackPanel = ({
   const revealed = phase === 'revealed';
   const adaptationCount = human.adaptations.length;
   const currentAdaptation = human.adaptations.at(-1);
+  const violations = human.violations || [];
 
   useEffect(() => {
     setPhase('receiving');
@@ -76,7 +84,7 @@ const HumanFeedbackPanel = ({
     <div className={styles.humanPanel}>
       <header className={styles.humanHeader}>
         <div>
-          <span>P-017 · GEN {generation}</span>
+          <span>{human.name} · GEN {generation} · {human.condition.label}</span>
           <strong>人体生物反馈</strong>
         </div>
         <div className={styles.scanStatus} data-phase={phase}>
@@ -128,15 +136,27 @@ const HumanFeedbackPanel = ({
           {metrics.map((metric) => (
             <div key={metric.key}>
               <span>{metric.label}</span>
-              <strong>{revealed ? metric.value : '--'}</strong>
+              <strong>
+                {revealed
+                  ? formatValue(metric.value, metric.precision)
+                  : '--'}
+              </strong>
               <small>
                 {revealed
-                  ? `${formatDelta(metric.delta)}${metric.unit}`
+                  ? `${formatDelta(metric.delta, metric.precision)}${metric.unit}`
                   : metric.unit}
               </small>
             </div>
           ))}
         </div>
+
+        {revealed && violations.length > 0 && (
+          <div className={styles.boundaryWarning} role="alert">
+            <span>越界警告</span>
+            <strong>{violations.map((item) => item.label).join('、')}</strong>
+            <small>{violations.at(-1).detail}</small>
+          </div>
+        )}
 
         <button
           type="button"
