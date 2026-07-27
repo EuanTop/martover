@@ -234,7 +234,7 @@
 .forecast {
   top: 86px;
   left: 18px;
-  width: 210px;
+  width: 226px;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -291,26 +291,55 @@
   opacity: 1;
 }
 
-/* 建造子面板：向上弹出。底部梯位是手调的，四层互不重叠：
-   toolbar 22 → toolHint 100 → logLine 140 → buildPalette 180。 */
+/* 建造面板停靠左下，不再盖住坑底中央的土豆和生产线。 */
 .buildPalette {
-  left: 50%;
-  bottom: 180px;
-  transform: translateX(-50%);
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 8px;
-  max-width: min(760px, 94vw);
+  left: 18px;
+  bottom: 22px;
+  width: 276px;
   padding: 10px 12px;
   background: var(--panel);
   border: 1px solid var(--ink);
   backdrop-filter: blur(12px);
+  z-index: 66;
 }
 
-.buildPalette .toolButton {
-  min-width: 132px;
-  max-width: 168px;
+.buildOptions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.buildOptions .toolButton {
+  width: 100%;
+  min-width: 0;
+}
+
+.buildTabs {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid rgba(86, 41, 19, 0.42);
+  padding-bottom: 7px;
+}
+
+.buildTabs button {
+  min-height: 30px;
+  border: 0;
+  border-right: 1px solid rgba(86, 41, 19, 0.35);
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.buildTabs button:last-child {
+  border-right: 0;
+}
+
+.buildTabs .buildTabActive {
+  background: var(--ink);
+  color: #ffe9da;
 }
 
 .contractFailed {
@@ -320,6 +349,174 @@
 
 .contractFailed header strong {
   text-decoration: line-through;
+}
+
+/* 右侧生命监测舱复用人体反馈阶段的外部骨骼白模。
+   它在经营阶段持续存在，让“种给谁吃”始终是工厂的可见目标。 */
+.humanMonitor {
+  right: 18px;
+  bottom: 154px;
+  width: 235px;
+  height: 246px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  padding: 9px;
+  background: rgba(245, 116, 53, 0.9);
+  border: 1px solid var(--ink);
+  backdrop-filter: blur(12px);
+  overflow: hidden;
+}
+
+.humanMonitor::before {
+  content: '';
+  position: absolute;
+  inset: 5px;
+  border: 1px solid rgba(86, 41, 19, 0.34);
+  clip-path: polygon(
+    0 0,
+    24% 0,
+    27% 4px,
+    73% 4px,
+    76% 0,
+    100% 0,
+    100% 100%,
+    76% 100%,
+    73% calc(100% - 4px),
+    27% calc(100% - 4px),
+    24% 100%,
+    0 100%
+  );
+  pointer-events: none;
+}
+
+.humanMonitor header,
+.humanMonitor footer {
+  position: relative;
+  z-index: 3;
+}
+
+.humanMonitor header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 4px 7px;
+  border-bottom: 1px solid rgba(86, 41, 19, 0.46);
+}
+
+.humanMonitor header span,
+.humanMonitor header strong {
+  display: block;
+}
+
+.humanMonitor header span {
+  font-family: monospace;
+  font-size: 8px;
+  opacity: 0.68;
+}
+
+.humanMonitor header strong {
+  margin-top: 2px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.humanMonitor header i {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  background: var(--ink);
+  box-shadow: 0 0 8px rgba(255, 241, 224, 0.9);
+  animation: monitor-pulse 1.2s ease-in-out infinite;
+}
+
+.humanViewport {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+  background:
+    repeating-linear-gradient(
+      0deg,
+      transparent 0,
+      transparent 19px,
+      rgba(255, 238, 222, 0.13) 20px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      transparent 0,
+      transparent 19px,
+      rgba(86, 41, 19, 0.08) 20px
+    );
+}
+
+.humanViewport > div:first-child {
+  position: absolute !important;
+  inset: 0;
+}
+
+.humanViewport > b {
+  position: absolute;
+  z-index: 4;
+  left: 12%;
+  right: 12%;
+  top: 80%;
+  height: 1px;
+  background: #fff4e5;
+  box-shadow:
+    0 0 8px rgba(255, 244, 229, 0.95),
+    0 -7px 16px rgba(255, 210, 178, 0.24);
+  animation: monitor-scan 2.4s ease-in-out infinite;
+}
+
+.humanViewport > span {
+  position: absolute;
+  z-index: 4;
+  right: 6px;
+  bottom: 5px;
+  padding: 2px 4px;
+  background: rgba(245, 116, 53, 0.76);
+  font-family: monospace;
+  font-size: 8px;
+}
+
+.humanMonitor footer {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border-top: 1px solid rgba(86, 41, 19, 0.46);
+}
+
+.humanMonitor footer div {
+  min-width: 0;
+  padding: 6px 4px 1px;
+}
+
+.humanMonitor footer div + div {
+  border-left: 1px solid rgba(86, 41, 19, 0.32);
+}
+
+.humanMonitor footer span,
+.humanMonitor footer strong {
+  display: block;
+  text-align: center;
+}
+
+.humanMonitor footer span {
+  font-size: 8px;
+}
+
+.humanMonitor footer strong {
+  margin-top: 1px;
+  font-family: monospace;
+  font-size: 12px;
+}
+
+@keyframes monitor-scan {
+  0%, 100% { top: 86%; opacity: 0.35; }
+  50% { top: 13%; opacity: 1; }
+}
+
+@keyframes monitor-pulse {
+  50% { opacity: 0.35; }
 }
 
 /* 底部工具栏 */
@@ -421,6 +618,68 @@
   pointer-events: none;
 }
 
+/* 工厂链是当前局面的一句话读法。节点只显示是否建成、施工或停机，
+   细节仍由场景里的管线与设施动作承担。 */
+.factoryChain {
+  top: 194px;
+  left: 50%;
+  transform: translateX(-50%);
+  min-width: min(520px, 88vw);
+  padding: 8px 12px;
+  background: rgba(245, 116, 53, 0.9);
+  border: 1px solid var(--ink);
+  backdrop-filter: blur(12px);
+  text-align: center;
+}
+
+.chainSteps {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 5px;
+}
+
+.chainNode {
+  min-width: 48px;
+  padding: 4px 7px;
+  border: 1px solid rgba(86, 41, 19, 0.45);
+  color: rgba(86, 41, 19, 0.66);
+  font-size: 11px;
+}
+
+.chainRunning {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: #ffe9da;
+}
+
+.chainBuilding {
+  border-style: dashed;
+  color: var(--ink);
+  animation: construction-pulse 1.2s ease-in-out infinite;
+}
+
+.chainStopped {
+  border-color: #7c1d08;
+  color: #7c1d08;
+}
+
+.chainArrow {
+  color: rgba(86, 41, 19, 0.7);
+  font-style: normal;
+}
+
+.bottleneck {
+  display: block;
+  margin-top: 5px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+@keyframes construction-pulse {
+  50% { background: rgba(255, 233, 218, 0.35); }
+}
+
 /* 结算遮罩 */
 .outcomeOverlay {
   inset: 0;
@@ -463,10 +722,17 @@
 
 @media (max-width: 900px) {
   .contracts {
-    top: auto;
-    bottom: 188px;
+    top: 86px;
+    bottom: auto;
     right: 12px;
     width: 200px;
+  }
+
+  .humanMonitor {
+    right: 12px;
+    bottom: 174px;
+    width: 200px;
+    height: 224px;
   }
 
   .forecast {
@@ -479,6 +745,26 @@
   .topBar {
     flex-wrap: wrap;
     max-width: 92vw;
+  }
+
+  .factoryChain {
+    top: auto;
+    bottom: 198px;
+    min-width: min(470px, 92vw);
+  }
+
+  .buildPalette {
+    top: 226px;
+    bottom: auto;
+    left: 12px;
+    transform: none;
+    width: min(276px, calc(100vw - 24px));
+    max-height: calc(100vh - 340px);
+    overflow-y: auto;
+  }
+
+  .buildOptions {
+    grid-template-columns: 1fr;
   }
 }
 

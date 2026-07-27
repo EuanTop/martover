@@ -23,10 +23,9 @@ export const CELL_USES = Object.freeze({
   FACILITY: 'facility',
 });
 
-// 每个坑只有一块种植床，长一棵「超级土豆」。其余 25 格全部是设施位。
-// 空间博弈因此从「种哪几格」变成「怎么摆设施伺候这一棵」——
-// 种植床只有 3-5 个直接邻格，加热桩与遮蔽棚都只在相邻时生效，
-// 这几个位置的争夺就是布局的核心。
+// 每个坑只有一块位于几何中心的种植核心，长一棵「超级土豆」。
+// 其余 25 格全部是设施位。中央相邻的七个位置留给根灌、热控与遮蔽，
+// 采集和加工设施向外展开，形成一座围绕单株作物运转的工厂。
 export const PLANTING_BED_ID = 'floor-0-0';
 
 export const POTATO_STATUS = Object.freeze({
@@ -37,20 +36,34 @@ export const POTATO_STATUS = Object.freeze({
 
 export const FACILITY_TYPES = Object.freeze({
   EXTRACTOR: 'extractor',
+  SIFTER: 'sifter',
   SOLAR: 'solar',
   BATTERY: 'battery',
+  NUTRIENT: 'nutrient',
+  ROOT_FEEDER: 'root-feeder',
   HEATER: 'heater',
   SHIELD: 'shield',
+});
+
+export const FACILITY_STATUS = Object.freeze({
+  BUILDING: 'building',
+  RUNNING: 'running',
+  DEGRADED: 'degraded',
+  STOPPED: 'stopped',
 });
 
 export const TOOL_MODES = Object.freeze({
   CLEAR: 'clear',
   PLANT: 'plant',
   HARVEST: 'harvest',
+  REPAIR: 'repair',
   DEMOLISH: 'demolish',
   BUILD_EXTRACTOR: 'build-extractor',
+  BUILD_SIFTER: 'build-sifter',
   BUILD_SOLAR: 'build-solar',
   BUILD_BATTERY: 'build-battery',
+  BUILD_NUTRIENT: 'build-nutrient',
+  BUILD_ROOT_FEEDER: 'build-root-feeder',
   BUILD_HEATER: 'build-heater',
   BUILD_SHIELD: 'build-shield',
 });
@@ -69,52 +82,118 @@ export const LOSS_REASONS = Object.freeze({
 // 工具 → 设施类型。建造类工具全部走同一条 buildFacility 路径。
 export const TOOL_FACILITY = Object.freeze({
   [TOOL_MODES.BUILD_EXTRACTOR]: FACILITY_TYPES.EXTRACTOR,
+  [TOOL_MODES.BUILD_SIFTER]: FACILITY_TYPES.SIFTER,
   [TOOL_MODES.BUILD_SOLAR]: FACILITY_TYPES.SOLAR,
   [TOOL_MODES.BUILD_BATTERY]: FACILITY_TYPES.BATTERY,
+  [TOOL_MODES.BUILD_NUTRIENT]: FACILITY_TYPES.NUTRIENT,
+  [TOOL_MODES.BUILD_ROOT_FEEDER]: FACILITY_TYPES.ROOT_FEEDER,
   [TOOL_MODES.BUILD_HEATER]: FACILITY_TYPES.HEATER,
   [TOOL_MODES.BUILD_SHIELD]: FACILITY_TYPES.SHIELD,
 });
 
-// 设施规格。upkeep 是每 SOL 的能量维持费 —— 遮蔽棚此前是 0，
-// 铺满即永久删除沙尘暴（唯一的事件系统），现在它也要烧能量。
+export const FACILITY_CATEGORIES = Object.freeze({
+  COLLECTION: 'collection',
+  ENERGY: 'energy',
+  PROCESSING: 'processing',
+  CULTIVATION: 'cultivation',
+});
+
+const ALL_ZONES = Object.freeze([
+  FARM_ZONES.FLOOR,
+  FARM_ZONES.SHADOW,
+  FARM_ZONES.RIM,
+]);
+
+// 设施规格同时驱动规则、HUD 与 3D 状态。建造费在下单时支付，
+// buildSols 结束前不生产、不吃维持能量。
 export const FACILITY_SPECS = Object.freeze({
   [FACILITY_TYPES.EXTRACTOR]: Object.freeze({
     label: '采冰器',
+    category: FACILITY_CATEGORIES.COLLECTION,
     cost: 8,
-    upkeep: 1.5,
-    waterPerSol: 3,
-    hint: '每 SOL +3 水；相邻坑壁格每格 +12%',
-    // 采冰器建在坑壁旁更有效：阴影区的水冰埋得浅。
-    adjacencyZone: FARM_ZONES.SHADOW,
-    adjacencyBonus: 0.12,
+    upkeep: 1.2,
+    buildSols: 2,
+    waterPerSol: 4.2,
+    allowedZones: Object.freeze([FARM_ZONES.SHADOW]),
+    hint: '从坑壁阴影层抽取水冰',
+  }),
+  [FACILITY_TYPES.SIFTER]: Object.freeze({
+    label: '矿物筛分机',
+    category: FACILITY_CATEGORIES.COLLECTION,
+    cost: 7,
+    upkeep: 1,
+    buildSols: 2,
+    mineralPerSol: 2.4,
+    allowedZones: Object.freeze([FARM_ZONES.SHADOW, FARM_ZONES.RIM]),
+    hint: '筛取营养合成所需矿物',
   }),
   [FACILITY_TYPES.SOLAR]: Object.freeze({
     label: '光伏阵',
+    category: FACILITY_CATEGORIES.ENERGY,
     cost: 10,
     upkeep: 0,
+    buildSols: 2,
     energyPerSol: 3,
+    allowedZones: ALL_ZONES,
     hint: '每 SOL +3 能量；坑缘 +30%、坑底 −25%、相邻光伏互相遮挡 −12%',
   }),
   [FACILITY_TYPES.BATTERY]: Object.freeze({
     label: '蓄电组',
+    category: FACILITY_CATEGORIES.ENERGY,
     cost: 8,
     upkeep: 0,
+    buildSols: 2,
     energyCapBonus: 30,
+    allowedZones: ALL_ZONES,
     hint: '能量上限 +30',
   }),
+  [FACILITY_TYPES.NUTRIENT]: Object.freeze({
+    label: '营养合成器',
+    category: FACILITY_CATEGORIES.PROCESSING,
+    cost: 10,
+    upkeep: 1.5,
+    buildSols: 3,
+    waterInput: 1.8,
+    mineralInput: 1,
+    nutrientPerSol: 2.4,
+    remoteEfficiency: 0.65,
+    supplierAdjacencyBonus: 0.15,
+    allowedZones: Object.freeze([FARM_ZONES.FLOOR, FARM_ZONES.SHADOW]),
+    hint: '把水与矿物合成为营养液',
+  }),
+  [FACILITY_TYPES.ROOT_FEEDER]: Object.freeze({
+    label: '根区灌注器',
+    category: FACILITY_CATEGORIES.CULTIVATION,
+    cost: 9,
+    upkeep: 1.2,
+    buildSols: 2,
+    waterPerSol: 5,
+    nutrientPerSol: 2,
+    requiresCoreAdjacency: true,
+    allowedZones: Object.freeze([FARM_ZONES.FLOOR]),
+    hint: '必须贴近中央核心，输送水与营养',
+  }),
   [FACILITY_TYPES.HEATER]: Object.freeze({
-    label: '加热桩',
+    label: '热调节桩',
+    category: FACILITY_CATEGORIES.CULTIVATION,
     cost: 6,
-    upkeep: 2.5,
-    growthBoost: 0.45,
-    neighbourGrowthBoost: 0.25,
-    hint: '自身生长 +45%，相邻格 +25%',
+    upkeep: 2.2,
+    buildSols: 2,
+    thermalPerSol: 0.65,
+    requiresCoreAdjacency: true,
+    allowedZones: Object.freeze([FARM_ZONES.FLOOR]),
+    hint: '必须贴近中央核心，稳定根区温度',
   }),
   [FACILITY_TYPES.SHIELD]: Object.freeze({
-    label: '遮蔽棚',
+    label: '辐射遮蔽器',
+    category: FACILITY_CATEGORIES.CULTIVATION,
     cost: 9,
     upkeep: 1.5,
-    hint: '自身与相邻格免疫沙尘暴',
+    buildSols: 3,
+    stabilityPerSol: 0.7,
+    requiresCoreAdjacency: true,
+    allowedZones: Object.freeze([FARM_ZONES.FLOOR]),
+    hint: '必须贴近中央核心，抵御辐射与风暴',
   }),
 });
 
@@ -148,6 +227,8 @@ export const WATER_PER_POTATO = 6.5;
 export const REACTOR_ENERGY_PER_SOL = 6;
 export const BASE_ENERGY_CAP = 40;
 export const BASE_WATER_CAP = 60;
+export const BASE_MINERAL_CAP = 40;
+export const BASE_NUTRIENT_CAP = 30;
 // 基地自带的冷凝回收：保证「一台采冰器都没有」时也能撑到建起第一台，
 // 但远不足以支撑扩张。没有它，开局第一批作物会在成熟前旱死，
 // 而那时的能量还买不起采冰器 —— 死局。
@@ -255,28 +336,41 @@ export const createBaseState = (crater, id) => {
     seed,
     environment,
     growthFactor: getEnvironmentGrowthFactor(environment),
-    // 26 格全部存在。cleared=false 即待开垦，不是永久锁死。
-    // 其中 PLANTING_BED_ID 那一格是种植床（长唯一那棵超级土豆），
-    // 其余 25 格全是设施位。初始开垦种植床及其一个邻格 + 一个坑壁格：
-    // 开局的必修课是「先建采冰器」，坑壁格就是给它准备的。
+    // 中央核心 + 25 个设施位。开局开放一个中央邻格和三个坑壁位：
+    // 坑壁位承载采冰、筛分、营养加工；中央邻格专门保留给培育设施。
+    // 这让第一条生产链不需要玩家先理解隐藏的格位冲突。
     cells: createCellLattice(seed).map((cell) => ({
       id: cell.id,
       zone: cell.zone,
       ring: cell.ring,
       isPlantingBed: cell.id === PLANTING_BED_ID,
       cleared: cell.id === PLANTING_BED_ID
-        || cell.id === 'floor-0-1'
-        || cell.id === 'shadow-2-0',
+        || cell.id === 'floor-1-0'
+        || cell.id === 'shadow-2-0'
+        || cell.id === 'shadow-2-1'
+        || cell.id === 'shadow-2-2',
       use: null,
       facility: null,
     })),
     // 唯一的那棵超级土豆。null = 种植床空着。
     potato: null,
-    stores: { water: 30, energy: 22, tubers: 0, seedStock: 4 },
+    stores: {
+      water: 30,
+      energy: 30,
+      minerals: 0,
+      nutrients: 0,
+      tubers: 0,
+      seedStock: 4,
+    },
     // 水与能量都有上限：无上限的资源在第一次建造之后就不再是约束。
     // 水的上限靠储水罐（暂未开放）与蓄电组之外的手段抬高，
     // Phase 1 固定，逼玩家把多余的产能变成地块而不是存起来。
-    caps: { water: BASE_WATER_CAP, energy: BASE_ENERGY_CAP },
+    caps: {
+      water: BASE_WATER_CAP,
+      energy: BASE_ENERGY_CAP,
+      minerals: BASE_MINERAL_CAP,
+      nutrients: BASE_NUTRIENT_CAP,
+    },
     hazards: {
       storm: scheduleStorm(seed, FIRST_STORM_SOL - STORM_INTERVAL_START, 0),
       coldSnap: scheduleColdSnap(0, 0),
@@ -288,9 +382,10 @@ export const createBaseState = (crater, id) => {
 };
 
 export const createColonyState = (crater) => ({
-  schemaVersion: 1,
+  schemaVersion: 2,
   sol: 0,
-  clock: { paused: false, speed: 1, autoPauseArmed: true },
+  // 玩家先读懂第一步，再主动启动时间。基地加载与镜头过渡不能偷走 SOL。
+  clock: { paused: true, speed: 1, autoPauseArmed: true },
 
   activeBaseId: 'base-01',
   baseOrder: ['base-01'],

@@ -30,10 +30,15 @@ describe('baseLayout', () => {
     expect(createCellLattice(SEED)).toEqual(createCellLattice(SEED));
   });
 
-  it('gives every cell 3 to 5 neighbours and leaves none isolated', () => {
-    const degrees = createCellLattice(SEED)
+  it('gives the center seven neighbours and leaves no outer cell isolated', () => {
+    const cells = createCellLattice(SEED);
+    const center = cells.find((cell) => cell.id === 'floor-0-0');
+    const degrees = cells
+      .filter((cell) => cell.id !== center.id)
       .map((cell) => getNeighbourIds(cell.id).length);
 
+    expect(center.normalizedRadius).toBe(0);
+    expect(getNeighbourIds(center.id)).toHaveLength(7);
     expect(Math.min(...degrees)).toBeGreaterThanOrEqual(3);
     expect(Math.max(...degrees)).toBeLessThanOrEqual(5);
   });
@@ -98,7 +103,9 @@ describe('baseLayout', () => {
       expect(Number.isFinite(cell.footprintRadius)).toBe(true);
       expect(cell.footprintRadius).toBeGreaterThan(0);
       // 旧的 PLOT_RADII 是 0.11-0.16，26 格时必然重叠。
-      expect(cell.footprintRadius).toBeLessThan(0.08);
+      expect(cell.footprintRadius).toBeLessThanOrEqual(
+        cell.id === 'floor-0-0' ? 0.09 : 0.08
+      );
     });
   });
 

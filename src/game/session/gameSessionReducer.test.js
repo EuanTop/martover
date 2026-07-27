@@ -299,16 +299,14 @@ describe('colony clock', () => {
     return reduce(state, GAME_SESSION_ACTIONS.BEGIN_BREEDING);
   };
 
-  it('starts running at 1x', () => {
+  it('starts paused at 1x so loading never consumes a SOL', () => {
     const state = startColony();
 
-    expect(state.colony.clock).toMatchObject({ paused: false, speed: 1 });
+    expect(state.colony.clock).toMatchObject({ paused: true, speed: 1 });
   });
 
   it('clamps speed to the allowed steps and resumes on change', () => {
     let state = startColony();
-    state = reduce(state, GAME_SESSION_ACTIONS.COLONY_TOGGLE_PAUSED);
-    expect(state.colony.clock.paused).toBe(true);
 
     state = reduce(state, GAME_SESSION_ACTIONS.COLONY_SET_SPEED, 4);
     expect(state.colony.clock.speed).toBe(4);
@@ -322,9 +320,9 @@ describe('colony clock', () => {
   it('toggles pause both ways', () => {
     let state = startColony();
     state = reduce(state, GAME_SESSION_ACTIONS.COLONY_TOGGLE_PAUSED);
-    expect(state.colony.clock.paused).toBe(true);
-    state = reduce(state, GAME_SESSION_ACTIONS.COLONY_TOGGLE_PAUSED);
     expect(state.colony.clock.paused).toBe(false);
+    state = reduce(state, GAME_SESSION_ACTIONS.COLONY_TOGGLE_PAUSED);
+    expect(state.colony.clock.paused).toBe(true);
   });
 
   it('skips forward and always lands paused', () => {
@@ -357,6 +355,88 @@ describe('colony clock', () => {
 
     expect(getDecisionPoints(state.colony).some((p) => p.urgency >= 2))
       .toBe(true);
+  });
+
+  it('stops when construction completes instead of skipping over the factory', () => {
+    let state = startColony();
+    state = reduce(state, GAME_SESSION_ACTIONS.COLONY_CELL_ACTION, {
+      cellId: 'shadow-2-0',
+      tool: TOOL_MODES.BUILD_EXTRACTOR,
+    });
+
+    state = reduce(state, GAME_SESSION_ACTIONS.COLONY_SKIP_TO_EVENT);
+
+    expect(state.colony.sol).toBe(2);
+    expect(state.colony.bases['base-01'].cells.find(
+      (cell) => cell.id === 'shadow-2-0'
+    ).facility.completedSol).toBe(2);
+  });
+
+  it('auto-pauses when construction completes during normal time', () => {
+    let state = startColony();
+    state = reduce(state, GAME_SESSION_ACTIONS.COLONY_CELL_ACTION, {
+      cellId: 'shadow-2-0',
+      tool: TOOL_MODES.BUILD_EXTRACTOR,
+    });
+    state = reduce(state, GAME_SESSION_ACTIONS.COLONY_SET_SPEED, 1);
+
+    state = reduce(state, GAME_SESSION_ACTIONS.TICK);
+    expect(state.colony.clock.paused).toBe(false);
+    state = reduce(state, GAME_SESSION_ACTIONS.TICK);
+
+    expect(state.colony.sol).toBe(2);
+    expect(state.colony.clock.paused).toBe(true);
+  });
+
+  it('stops before an open contract deadline', () => {
+    let state = startColony();
+    state = {
+      ...state,
+      colony: {
+        ...state.colony,
+        contracts: state.colony.contracts.map((contract, index) => (
+          index === 0 ? { ...contract, deadlineSol: 4 } : contract
+        )),
+        bases: {
+          ...state.colony.bases,
+          'base-01': {
+            ...state.colony.bases['base-01'],
+            hazards: {
+              ...state.colony.bases['base-01'].hazards,
+              storm: { index: 0, announceSol: 50, arriveSol: 54 },
+            },
+          },
+        },
+      },
+    };
+
+    state = reduce(state, GAME_SESSION_ACTIONS.COLONY_SKIP_TO_EVENT);
+
+    expect(state.colony.sol).toBe(3);
+    expect(getDecisionPoints(state.colony)).toContainEqual(
+      expect.objectContaining({ kind: 'contract-deadline', remaining: 1 })
+    );
+  });
+
+  it('cannot skip through a contract on its deadline', () => {
+    let state = startColony();
+    state = {
+      ...state,
+      colony: {
+        ...state.colony,
+        sol: 4,
+        clock: { ...state.colony.clock, paused: false },
+        contracts: state.colony.contracts.map((contract, index) => (
+          index === 0 ? { ...contract, deadlineSol: 4 } : contract
+        )),
+      },
+    };
+
+    state = reduce(state, GAME_SESSION_ACTIONS.COLONY_SKIP_TO_EVENT);
+
+    expect(state.colony.sol).toBe(4);
+    expect(state.colony.outcome).toBeNull();
+    expect(state.colony.clock.paused).toBe(true);
   });
 
   it('never skips past the end of a run', () => {

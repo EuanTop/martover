@@ -429,6 +429,8 @@ const TimestampDisplay = ({ isDarkMode }) => {
             <ColonyHUD
               colony={colony}
               base={activeBase}
+              human={human}
+              generation={generation}
               selectedTool={selectedColonyTool}
               onSelectTool={setSelectedColonyTool}
               onConvertSeeds={onColonyConvertSeeds}

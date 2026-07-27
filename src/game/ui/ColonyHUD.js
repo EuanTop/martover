@@ -4,7 +4,9 @@ import {
   BulbOutlined,
   CloudOutlined,
   DeleteOutlined,
+  DeploymentUnitOutlined,
   ExperimentOutlined,
+  FilterOutlined,
   FireOutlined,
   RestOutlined,
   SafetyCertificateOutlined,
@@ -16,13 +18,16 @@ import {
   canApplyTool,
   getColonyAlerts,
   getEnergyCap,
+  getFactoryBottleneck,
+  getFactoryForecast,
   getPotatoYield,
-  getWaterDrain,
-  getWaterIncome,
 } from '../economy/colonyEconomy';
 import {
   CLEAR_COST,
   COLONY_OUTCOMES,
+  FACILITY_CATEGORIES,
+  FACILITY_STATUS,
+  FACILITY_TYPES,
   POTATO_STATUS,
   FACILITY_SPECS,
   LOSS_REASONS,
@@ -31,6 +36,7 @@ import {
   TUBERS_PER_SEED,
 } from '../economy/colonyState';
 import ClockControls from './ClockControls';
+import HumanFeedbackScene from './HumanFeedbackScene';
 import styles from './ColonyHUD.module.css';
 
 // 直接动作与建造动作分开：建造有 5 种，平铺会把工具栏挤爆。
@@ -54,6 +60,12 @@ const directTools = Object.freeze([
     icon: ScissorOutlined,
   },
   {
+    tool: TOOL_MODES.REPAIR,
+    label: '维修',
+    hint: '修复受损设施',
+    icon: ToolOutlined,
+  },
+  {
     tool: TOOL_MODES.DEMOLISH,
     label: '拆除',
     hint: '返还一半能量',
@@ -63,8 +75,11 @@ const directTools = Object.freeze([
 
 const buildIcons = Object.freeze({
   [TOOL_MODES.BUILD_EXTRACTOR]: CloudOutlined,
+  [TOOL_MODES.BUILD_SIFTER]: FilterOutlined,
   [TOOL_MODES.BUILD_SOLAR]: BulbOutlined,
   [TOOL_MODES.BUILD_BATTERY]: ThunderboltOutlined,
+  [TOOL_MODES.BUILD_NUTRIENT]: ExperimentOutlined,
+  [TOOL_MODES.BUILD_ROOT_FEEDER]: DeploymentUnitOutlined,
   [TOOL_MODES.BUILD_HEATER]: FireOutlined,
   [TOOL_MODES.BUILD_SHIELD]: SafetyCertificateOutlined,
 });
@@ -80,6 +95,20 @@ const buildTools = Object.freeze(
 );
 
 const ALL_TOOLS = Object.freeze([...directTools, ...buildTools]);
+
+const BUILD_GROUPS = Object.freeze([
+  { id: FACILITY_CATEGORIES.COLLECTION, label: '采集' },
+  { id: FACILITY_CATEGORIES.ENERGY, label: '供能' },
+  { id: FACILITY_CATEGORIES.PROCESSING, label: '加工' },
+  { id: FACILITY_CATEGORIES.CULTIVATION, label: '培育' },
+]);
+
+const CHAIN_STEPS = Object.freeze([
+  { type: FACILITY_TYPES.EXTRACTOR, label: '采水' },
+  { type: FACILITY_TYPES.SIFTER, label: '矿物' },
+  { type: FACILITY_TYPES.NUTRIENT, label: '营养' },
+  { type: FACILITY_TYPES.ROOT_FEEDER, label: '根灌' },
+]);
 
 const ContractCard = ({ contract, stock, sol, onDeliver }) => {
   const remaining = contract.deadlineSol - sol;
@@ -144,6 +173,37 @@ const RateRow = ({ label, stock, cap, income, drain }) => {
   );
 };
 
+const HumanMonitor = ({ human, generation }) => (
+  <aside className={`${styles.hud} ${styles.humanMonitor}`}>
+    <header>
+      <div>
+        <span>CREW BIO-SCAN · GEN {generation}</span>
+        <strong>{human.name}</strong>
+      </div>
+      <i title="生命体征在线" />
+    </header>
+    <div className={styles.humanViewport}>
+      <HumanFeedbackScene human={human} phase="scanning" />
+      <b aria-hidden="true" />
+      <span>等待本轮土豆样本</span>
+    </div>
+    <footer>
+      <div>
+        <span>生命</span>
+        <strong>{Math.round(human.vitality)}</strong>
+      </div>
+      <div>
+        <span>生理年龄</span>
+        <strong>{human.biologicalAge.toFixed(1)}</strong>
+      </div>
+      <div>
+        <span>代谢负荷</span>
+        <strong>{Math.round(human.metabolicLoad)}</strong>
+      </div>
+    </footer>
+  </aside>
+);
+
 const ToolButton = ({ definition, selected, hint, onSelect }) => {
   const Icon = definition.icon;
 
@@ -163,6 +223,8 @@ const ToolButton = ({ definition, selected, hint, onSelect }) => {
 const ColonyHUD = ({
   colony,
   base,
+  human,
+  generation,
   selectedTool,
   onSelectTool,
   onConvertSeeds,
@@ -173,6 +235,7 @@ const ColonyHUD = ({
   onSkipToEvent,
 }) => {
   const [buildOpen, setBuildOpen] = useState(false);
+  const [buildGroup, setBuildGroup] = useState(FACILITY_CATEGORIES.COLLECTION);
 
   if (!colony || !base) return null;
 
@@ -186,18 +249,51 @@ const ColonyHUD = ({
     ? base.cells.filter((cell) => canApplyTool(colony, cell.id, selectedTool)).length
     : 0;
   const energyCap = getEnergyCap(base);
-  const upkeep = base.cells.reduce(
-    (total, cell) => (
-      cell.facility ? total + FACILITY_SPECS[cell.facility.type].upkeep : total
-    ),
-    0
+  const forecast = getFactoryForecast(base);
+  const bottleneck = getFactoryBottleneck(base);
+  const visibleBuildTools = buildTools.filter(
+    (definition) => definition.spec.category === buildGroup
   );
+  const chainState = CHAIN_STEPS.map((step) => {
+    const facilities = base.cells.filter(
+      (cell) => cell.facility?.type === step.type
+    );
+    return {
+      ...step,
+      built: facilities.some(
+        (cell) => cell.facility.buildRemaining === 0
+      ),
+      running: facilities.some(
+        (cell) => cell.facility.status === FACILITY_STATUS.RUNNING
+      ),
+      building: facilities.some(
+        (cell) => cell.facility.status === FACILITY_STATUS.BUILDING
+      ),
+    };
+  });
 
   const handleSelect = (tool) => {
     onSelectTool(tool);
-    if (tool && TOOL_FACILITY[tool]) return;
+    // 设施选中后立即把菜单收回，让发亮地块和建筑投影重新成为主体。
+    // 继续常驻的菜单会迫使玩家隔着 UI 猜点击位置。
     setBuildOpen(false);
   };
+
+  const unavailableSuffix = (() => {
+    if (!selectedTool) return '';
+    if (selectedTool === TOOL_MODES.PLANT && base.stores.seedStock < 1) {
+      return '：种薯不足，先用「留种」转化';
+    }
+
+    const facilityType = TOOL_FACILITY[selectedTool];
+    if (!facilityType) return '';
+    const spec = FACILITY_SPECS[facilityType];
+    if (base.stores.energy < spec.cost) return '：能量不足';
+    if (spec.requiresCoreAdjacency) {
+      return '：先用「开垦」打开中央核心旁的坑底格';
+    }
+    return '：先开垦符合设施区位的空地';
+  })();
 
   return (
     <>
@@ -260,16 +356,60 @@ const ColonyHUD = ({
         <RateRow
           label="水"
           stock={base.stores.water}
-          income={base.facilitiesIdle ? 0 : getWaterIncome(base)}
-          drain={getWaterDrain(base)}
+          cap={base.caps.water}
+          income={forecast.water.income}
+          drain={forecast.water.drain}
         />
         <RateRow
           label="能量"
           stock={base.stores.energy}
           cap={energyCap}
-          income={base.facilitiesIdle ? 0 : 6}
-          drain={upkeep}
+          income={forecast.energy.income}
+          drain={forecast.energy.drain}
         />
+        <RateRow
+          label="矿物"
+          stock={base.stores.minerals}
+          cap={base.caps.minerals}
+          income={forecast.minerals.income}
+          drain={forecast.minerals.drain}
+        />
+        <RateRow
+          label="营养"
+          stock={base.stores.nutrients}
+          cap={base.caps.nutrients}
+          income={forecast.nutrients.income}
+          drain={forecast.nutrients.drain}
+        />
+      </div>
+
+      <div className={`${styles.hud} ${styles.factoryChain}`}>
+        <div className={styles.chainSteps}>
+          {chainState.map((step, index) => (
+            <React.Fragment key={step.type}>
+              <span
+                className={`${styles.chainNode} ${
+                  step.running ? styles.chainRunning
+                    : step.building ? styles.chainBuilding
+                      : step.built ? styles.chainStopped : ''
+                }`}
+              >
+                {step.label}
+              </span>
+              {index < chainState.length - 1 && (
+                <i className={styles.chainArrow}>→</i>
+              )}
+            </React.Fragment>
+          ))}
+          <i className={styles.chainArrow}>→</i>
+          <span className={`${styles.chainNode} ${
+            base.potato ? styles.chainRunning : ''
+          }`}
+          >
+            土豆
+          </span>
+        </div>
+        <strong className={styles.bottleneck}>{bottleneck.text}</strong>
       </div>
 
       <div className={`${styles.hud} ${styles.contracts}`}>
@@ -284,6 +424,10 @@ const ColonyHUD = ({
         ))}
       </div>
 
+      {human && (
+        <HumanMonitor human={human} generation={generation} />
+      )}
+
       {latestLog && (
         <div className={`${styles.hud} ${styles.logLine}`}>
           <span>SOL {latestLog.sol} · {latestLog.text}</span>
@@ -294,25 +438,37 @@ const ColonyHUD = ({
         <div className={`${styles.hud} ${styles.toolHint}`}>
           {eligibleCount > 0
             ? `已选「${activeDefinition.label}」— 点击坑内发亮的地块执行（${eligibleCount} 格可用）`
-            : `「${activeDefinition.label}」当前没有可用地块${
-              selectedTool === TOOL_MODES.PLANT && base.stores.seedStock < 1
-                ? '：种薯不足，先用「留种」转化'
-                : ''
-            }`}
+            : `「${activeDefinition.label}」当前没有可用地块${unavailableSuffix}`}
         </div>
       )}
 
       {buildOpen && (
         <div className={`${styles.hud} ${styles.buildPalette}`}>
-          {buildTools.map((definition) => (
-            <ToolButton
-              key={definition.tool}
-              definition={definition}
-              selected={selectedTool === definition.tool}
-              hint={`能量 ${definition.spec.cost} · 维持 ${definition.spec.upkeep}/SOL — ${definition.spec.hint}`}
-              onSelect={handleSelect}
-            />
-          ))}
+          <div className={styles.buildTabs} role="tablist" aria-label="设施分类">
+            {BUILD_GROUPS.map((group) => (
+              <button
+                key={group.id}
+                type="button"
+                role="tab"
+                aria-selected={buildGroup === group.id}
+                className={buildGroup === group.id ? styles.buildTabActive : ''}
+                onClick={() => setBuildGroup(group.id)}
+              >
+                {group.label}
+              </button>
+            ))}
+          </div>
+          <div className={styles.buildOptions}>
+            {visibleBuildTools.map((definition) => (
+              <ToolButton
+                key={definition.tool}
+                definition={definition}
+                selected={selectedTool === definition.tool}
+                hint={`建造 ${definition.spec.cost} · ${definition.spec.buildSols} SOL · 维持 ${definition.spec.upkeep}/SOL`}
+                onSelect={handleSelect}
+              />
+            ))}
+          </div>
         </div>
       )}
 

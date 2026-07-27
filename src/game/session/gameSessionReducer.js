@@ -28,6 +28,7 @@ import {
   getDecisionPoints,
   harvestCell,
   plantCell,
+  repairFacility,
 } from '../economy/colonyEconomy';
 import {
   createColonyState,
@@ -122,10 +123,11 @@ export const gameSessionReducer = (state, action) => {
       if (state.colony) {
         const colony = advanceColonySol(state.colony);
 
-        // 自动暂停：紧急决策点出现时停表，让玩家不必盯着时钟。
+        // 自动暂停：施工完成、可收获、灾害与资源危机都把控制权
+        // 交还玩家，让时间只跨过等待，不跨过决定。
         // autoPauseArmed 在紧急集合清空后重新武装，避免持续状态
         // （比如长期缺水）每个 SOL 都把游戏暂停一次。
-        const urgent = getDecisionPoints(colony).some((p) => p.urgency >= 3);
+        const urgent = getDecisionPoints(colony).some((p) => p.urgency >= 2);
 
         if (!urgent) {
           return {
@@ -192,6 +194,19 @@ export const gameSessionReducer = (state, action) => {
       if (!state.colony || state.colony.outcome) return state;
 
       {
+        const deadlineReached = getDecisionPoints(state.colony).some(
+          (point) => point.kind === 'contract-deadline' && point.remaining === 0
+        );
+        if (deadlineReached) {
+          return {
+            ...state,
+            colony: {
+              ...state.colony,
+              clock: { ...state.colony.clock, paused: true },
+            },
+          };
+        }
+
         let colony = state.colony;
 
         for (let step = 0; step < SKIP_MAX_SOLS; step += 1) {
@@ -216,6 +231,7 @@ export const gameSessionReducer = (state, action) => {
           [TOOL_MODES.CLEAR]: () => clearCell(state.colony, cellId),
           [TOOL_MODES.PLANT]: () => plantCell(state.colony, cellId),
           [TOOL_MODES.HARVEST]: () => harvestCell(state.colony, cellId),
+          [TOOL_MODES.REPAIR]: () => repairFacility(state.colony, cellId),
           [TOOL_MODES.DEMOLISH]: () => demolishCell(state.colony, cellId),
         };
         const handler = facilityType

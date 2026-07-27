@@ -16,8 +16,8 @@ const TAU = Math.PI * 2;
 // 区间内（见下方 assertRingsWithinZones），因此「坑底」的格子真的
 // 在坑底地形上。offset 让相邻环互相错开，避免所有格连成一条辐条。
 export const CELL_RINGS = Object.freeze([
-  { zone: 'floor', ring: 0, sectors: 3, inner: 0.06, outer: 0.18, offset: 0.4 },
-  { zone: 'floor', ring: 1, sectors: 5, inner: 0.18, outer: 0.3, offset: 0.18 },
+  { zone: 'floor', ring: 0, sectors: 1, inner: 0, outer: 0, offset: 0 },
+  { zone: 'floor', ring: 1, sectors: 7, inner: 0.18, outer: 0.3, offset: 0.18 },
   { zone: 'shadow', ring: 2, sectors: 6, inner: 0.4, outer: 0.54, offset: 0.52 },
   { zone: 'shadow', ring: 3, sectors: 6, inner: 0.54, outer: 0.68, offset: 0 },
   { zone: 'rim', ring: 4, sectors: 6, inner: 0.74, outer: 0.84, offset: 0.52 },
@@ -50,6 +50,8 @@ const getNominalAngle = (spec, sector) => (
 
 // 格子外接圆半径：径向不超过环宽的一半，切向不超过半个扇区弧长。
 const getFootprintRadius = (spec) => {
+  if (spec.ring === 0) return 0.09;
+
   const midRadius = (spec.inner + spec.outer) / 2;
   const radialLimit = (spec.outer - spec.inner) / 2;
   const tangentialLimit = (Math.PI / spec.sectors) * midRadius;
@@ -61,6 +63,20 @@ const getFootprintRadius = (spec) => {
 export const createCellLattice = (seed) => CELL_RINGS.flatMap((spec) => (
   Array.from({ length: spec.sectors }, (_, sector) => {
     const id = getCellId(spec.zone, spec.ring, sector);
+    if (spec.ring === 0) {
+      return Object.freeze({
+        id,
+        zone: spec.zone,
+        ring: spec.ring,
+        sector,
+        sectors: spec.sectors,
+        nominalAngle: 0,
+        angle: 0,
+        normalizedRadius: 0,
+        footprintRadius: getFootprintRadius(spec),
+      });
+    }
+
     // 抖动的下标用 stableHash(id)。旧实现用 plot.id.length，
     // 同长度的 id 会拿到完全相同的抖动。
     const jitterLimit = JITTER_SECTOR_FRACTION * (TAU / spec.sectors);
@@ -106,6 +122,16 @@ const buildNeighbourMap = () => {
     cells.forEach((other) => {
       if (other.id === cell.id) return;
 
+      if (cell.ring === 0 && other.ring === 1) {
+        map.get(cell.id).push(other.id);
+        return;
+      }
+
+      if (other.ring === 0 && cell.ring === 1) {
+        map.get(cell.id).push(other.id);
+        return;
+      }
+
       if (other.ring === cell.ring) {
         const step = (other.sector - cell.sector + cell.sectors) % cell.sectors;
         if (step === 1 || step === cell.sectors - 1) {
@@ -137,6 +163,8 @@ export const getNeighbourIds = (cellId) => NEIGHBOUR_MAP.get(cellId) || [];
 
 // 每环是否落在自己 zone 的分带内。测试用，也是改环定义时的护栏。
 export const assertRingsWithinZones = () => CELL_RINGS.every((spec) => {
+  if (spec.ring === 0) return spec.inner === 0 && spec.outer === 0;
+
   const band = ZONE_BANDS[spec.zone];
   return Boolean(band) && spec.inner >= band.inner && spec.outer <= band.outer;
 });

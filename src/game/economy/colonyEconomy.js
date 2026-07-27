@@ -1,5 +1,5 @@
-// 殖民地经营的规则层。纯函数、确定性：同一个坑、同一串操作，
-// 永远得到同一局。育种、遗传与人体反馈是待接回子系统，本层不依赖它们。
+// 殖民地经营规则层。所有生产、施工、损伤与培育计算保持纯函数，
+// React 和 Three.js 只负责把这里的状态显示出来。
 
 import { clamp } from '../util/deterministic';
 import { getNeighbourIds } from './baseLayout';
@@ -13,6 +13,7 @@ import {
   COLD_SNAP_GROWTH_MULTIPLIER,
   COLONY_OUTCOMES,
   FACILITY_SPECS,
+  FACILITY_STATUS,
   FACILITY_TYPES,
   FARM_ZONES,
   getActiveBase,
@@ -21,6 +22,7 @@ import {
   LOSS_REASONS,
   patchBase,
   patchCell,
+  PLANTING_BED_ID,
   POTATO_BASE_YIELD,
   POTATO_MATURITY_SOLS,
   POTATO_MAX_YIELD,
@@ -39,77 +41,48 @@ import {
 
 const isFacility = (cell, type) => cell.facility?.type === type;
 
-const countFacilities = (base, type) => base.cells.filter(
-  (cell) => isFacility(cell, type)
-).length;
-
 const getNeighbourCells = (base, cellId) => getNeighbourIds(cellId)
   .map((id) => getCell(base, id))
   .filter(Boolean);
 
-// 是否被遮蔽棚罩住：自身是遮蔽棚，或任一相邻格是遮蔽棚。
-export const isShielded = (base, cellId) => {
-  const cell = getCell(base, cellId);
-  if (!cell) return false;
-  if (isFacility(cell, FACILITY_TYPES.SHIELD)) return true;
-
-  return getNeighbourCells(base, cellId).some(
-    (neighbour) => isFacility(neighbour, FACILITY_TYPES.SHIELD)
-  );
-};
-
-// 是否被加热桩覆盖（自身或相邻）。寒潮只打没有加热覆盖的格子。
-export const isHeated = (base, cellId) => {
-  const cell = getCell(base, cellId);
-  if (!cell) return false;
-  if (isFacility(cell, FACILITY_TYPES.HEATER)) return true;
-
-  return getNeighbourCells(base, cellId).some(
-    (neighbour) => isFacility(neighbour, FACILITY_TYPES.HEATER)
-  );
-};
-
-// ─── 速率 ─────────────────────────────────────────────────────
-
-export const getWaterCap = (base) => base.caps.water;
-
-export const getEnergyCap = (base) => (
-  base.caps.energy
-  + countFacilities(base, FACILITY_TYPES.BATTERY)
-    * FACILITY_SPECS[FACILITY_TYPES.BATTERY].energyCapBonus
+const isCoreNeighbour = (cellId) => (
+  getNeighbourIds(PLANTING_BED_ID).includes(cellId)
 );
 
-export const getFacilityUpkeep = (base) => base.cells.reduce(
-  (total, cell) => (
-    cell.facility ? total + FACILITY_SPECS[cell.facility.type].upkeep : total
-  ),
-  0
-);
-
-// 采冰器产水，按相邻坑壁格数加成：阴影区的水冰埋得浅。
-// 基础冷凝回收始终存在（哪怕设施全停），否则开局第一批作物会在
-// 成熟前旱死，而那时的能量还买不起采冰器 —— 无解的开局。
-export const getWaterIncome = (base) => {
-  const spec = FACILITY_SPECS[FACILITY_TYPES.EXTRACTOR];
-
-  return base.cells.reduce((total, cell) => {
-    if (!isFacility(cell, FACILITY_TYPES.EXTRACTOR)) return total;
-
-    const adjacent = getNeighbourCells(base, cell.id).filter(
-      (neighbour) => neighbour.zone === spec.adjacencyZone
-    ).length;
-
-    return total + spec.waterPerSol * (1 + adjacent * spec.adjacencyBonus);
-  }, BASE_WATER_RECLAIM);
+export const getFacilityStatus = (facility, facilitiesIdle = false) => {
+  if (!facility) return null;
+  if (facility.buildRemaining > 0) return FACILITY_STATUS.BUILDING;
+  if (facilitiesIdle || facility.integrity <= 20) return FACILITY_STATUS.STOPPED;
+  if (facility.integrity < 65) return FACILITY_STATUS.DEGRADED;
+  return FACILITY_STATUS.RUNNING;
 };
 
-// 光伏产能：坑缘日照好、坑底被坑壁挡；相邻光伏互相遮挡。
-// 于是「把光伏挤在一起」是错的，空间布局有真实代价。
-export const getSolarIncome = (base) => {
+export const getFacilityEfficiency = (facility) => {
+  if (!facility || facility.buildRemaining > 0 || facility.integrity <= 20) {
+    return 0;
+  }
+  return clamp(facility.integrity / 100, 0.25, 1);
+};
+
+export const isFacilityOperational = (base, cell, type = null) => Boolean(
+  cell?.facility
+  && (!type || cell.facility.type === type)
+  && !base.facilitiesIdle
+  && getFacilityEfficiency(cell.facility) > 0
+);
+
+const countBuiltFacilities = (base, type) => base.cells.filter(
+  (cell) => isFacility(cell, type) && getFacilityEfficiency(cell.facility) > 0
+);
+
+const getRawSolarIncome = (base) => {
   const spec = FACILITY_SPECS[FACILITY_TYPES.SOLAR];
 
   return base.cells.reduce((total, cell) => {
     if (!isFacility(cell, FACILITY_TYPES.SOLAR)) return total;
+
+    const efficiency = getFacilityEfficiency(cell.facility);
+    if (efficiency === 0) return total;
 
     const zoneFactor = cell.zone === FARM_ZONES.RIM
       ? 1.3
@@ -118,66 +91,252 @@ export const getSolarIncome = (base) => {
       (neighbour) => isFacility(neighbour, FACILITY_TYPES.SOLAR)
     ).length;
 
-    return total + spec.energyPerSol * zoneFactor * Math.max(0.4, 1 - crowding * 0.12);
+    return total
+      + spec.energyPerSol
+        * zoneFactor
+        * Math.max(0.4, 1 - crowding * 0.12)
+        * efficiency;
   }, 0);
 };
+
+const getRawWaterIncome = (base) => {
+  const spec = FACILITY_SPECS[FACILITY_TYPES.EXTRACTOR];
+  return countBuiltFacilities(base, FACILITY_TYPES.EXTRACTOR).reduce(
+    (total, cell) => total
+      + spec.waterPerSol * getFacilityEfficiency(cell.facility),
+    BASE_WATER_RECLAIM
+  );
+};
+
+const getRawMineralIncome = (base) => {
+  const spec = FACILITY_SPECS[FACILITY_TYPES.SIFTER];
+  return countBuiltFacilities(base, FACILITY_TYPES.SIFTER).reduce(
+    (total, cell) => total
+      + spec.mineralPerSol * getFacilityEfficiency(cell.facility),
+    0
+  );
+};
+
+const getNutrientEfficiency = (base, cell) => {
+  const spec = FACILITY_SPECS[FACILITY_TYPES.NUTRIENT];
+  const suppliers = getNeighbourCells(base, cell.id).filter(
+    (neighbour) => (
+      isFacility(neighbour, FACILITY_TYPES.EXTRACTOR)
+      || isFacility(neighbour, FACILITY_TYPES.SIFTER)
+    )
+  ).length;
+
+  return getFacilityEfficiency(cell.facility)
+    * Math.min(1, spec.remoteEfficiency + suppliers * spec.supplierAdjacencyBonus);
+};
+
+const getCoreFacilityPower = (base, type, perSol) => (
+  getNeighbourCells(base, PLANTING_BED_ID).reduce((total, cell) => {
+    if (!isFacilityOperational(base, cell, type)) return total;
+    return total + perSol * getFacilityEfficiency(cell.facility);
+  }, 0)
+);
+
+export const isShielded = (base, cellId) => {
+  const cell = getCell(base, cellId);
+  if (!cell) return false;
+
+  return [cell, ...getNeighbourCells(base, cellId)].some(
+    (candidate) => isFacilityOperational(
+      base,
+      candidate,
+      FACILITY_TYPES.SHIELD
+    )
+  );
+};
+
+export const isHeated = (base, cellId) => {
+  const cell = getCell(base, cellId);
+  if (!cell) return false;
+
+  return [cell, ...getNeighbourCells(base, cellId)].some(
+    (candidate) => isFacilityOperational(
+      base,
+      candidate,
+      FACILITY_TYPES.HEATER
+    )
+  );
+};
+
+export const getWaterCap = (base) => base.caps.water;
+
+export const getEnergyCap = (base) => (
+  base.caps.energy
+  + countBuiltFacilities(base, FACILITY_TYPES.BATTERY).reduce(
+    (total, cell) => total
+      + FACILITY_SPECS[FACILITY_TYPES.BATTERY].energyCapBonus
+        * getFacilityEfficiency(cell.facility),
+    0
+  )
+);
+
+export const getFacilityUpkeep = (base) => base.cells.reduce(
+  (total, cell) => {
+    const efficiency = getFacilityEfficiency(cell.facility);
+    if (efficiency === 0) return total;
+    return total + FACILITY_SPECS[cell.facility.type].upkeep;
+  },
+  0
+);
+
+export const getWaterIncome = (base) => (
+  base.facilitiesIdle ? BASE_WATER_RECLAIM : getRawWaterIncome(base)
+);
+
+export const getMineralIncome = (base) => (
+  base.facilitiesIdle ? 0 : getRawMineralIncome(base)
+);
+
+export const getSolarIncome = (base) => (
+  base.facilitiesIdle ? 0 : getRawSolarIncome(base)
+);
 
 export const getEnergyIncome = (base) => (
   REACTOR_ENERGY_PER_SOL + getSolarIncome(base)
 );
 
-// ─── 超级土豆 ─────────────────────────────────────────────────
-
-export const getPlantingBed = (base) => base.cells.find(
-  (cell) => cell.isPlantingBed
-);
+export const getPlantingBed = (base) => getCell(base, PLANTING_BED_ID);
 
 export const hasGrowingPotato = (base) => Boolean(
   base.potato && base.potato.status === POTATO_STATUS.GROWING
 );
 
-// 耗水端：超级土豆是大头，队伍也喝水。
 export const getWaterDrain = (base) => (
-  (base.potato ? WATER_PER_POTATO : 0)
-  + BASE_CREW_COUNT * WATER_PER_CREW
+  BASE_CREW_COUNT * WATER_PER_CREW
+  + (base.potato ? WATER_PER_POTATO : 0)
 );
 
-// 超级土豆的生长速度。加热桩必须建在种植床的相邻格才生效 ——
-// 种植床只有 3-5 个邻格，这几个位置的争夺就是布局的核心。
 export const getPotatoGrowthRate = (colony, base) => {
-  const bed = getPlantingBed(base);
-  if (!bed) return 0;
-
   const heaterSpec = FACILITY_SPECS[FACILITY_TYPES.HEATER];
-  const heaters = getNeighbourCells(base, bed.id).filter(
-    (cell) => isFacility(cell, FACILITY_TYPES.HEATER)
-  ).length;
-  const boost = base.facilitiesIdle
-    ? 1
-    : 1 + heaters * heaterSpec.neighbourGrowthBoost;
-  const chilled = colony.sol < base.hazards.coldSnapUntilSol && heaters === 0;
+  const heat = getCoreFacilityPower(
+    base,
+    FACILITY_TYPES.HEATER,
+    heaterSpec.thermalPerSol
+  );
+  const thermal = clamp(0.25 + heat, 0, 1);
+  const chilled = colony.sol < base.hazards.coldSnapUntilSol && heat === 0;
 
   return (100 / POTATO_MATURITY_SOLS)
     * base.growthFactor
-    * boost
+    * (0.72 + thermal * 0.38)
     * (chilled ? COLD_SNAP_GROWTH_MULTIPLIER : 1);
 };
 
-// 收获量 = 长到多大。养护质量（浇够水的比例 + 加热覆盖）决定体积，
-// 所以「怎么伺候这一棵」直接就是产量，而不是再乘一个隐藏系数。
 export const getPotatoYield = (base) => {
   if (!base.potato) return 0;
   const quality = clamp(base.potato.quality, 0, 1);
-
   return Math.round(
     POTATO_BASE_YIELD + (POTATO_MAX_YIELD - POTATO_BASE_YIELD) * quality
   );
 };
 
-// ─── 事件 ─────────────────────────────────────────────────────
+const getNutrientCapacity = (base) => (
+  base.cells.reduce((total, cell) => {
+    if (!isFacilityOperational(base, cell, FACILITY_TYPES.NUTRIENT)) {
+      return total;
+    }
+    return total
+      + FACILITY_SPECS[FACILITY_TYPES.NUTRIENT].nutrientPerSol
+        * getNutrientEfficiency(base, cell);
+  }, 0)
+);
 
-// 风暴严重度随次数升级：前两次只打坑缘，之后波及坑壁，
-// 第五次起开始打坏建筑 —— 遮蔽棚花在作物上就等于丢建筑。
+const getRootCapacity = (base, resource) => {
+  const spec = FACILITY_SPECS[FACILITY_TYPES.ROOT_FEEDER];
+  const key = resource === 'water' ? 'waterPerSol' : 'nutrientPerSol';
+
+  return getNeighbourCells(base, PLANTING_BED_ID).reduce((total, cell) => {
+    if (!isFacilityOperational(base, cell, FACILITY_TYPES.ROOT_FEEDER)) {
+      return total;
+    }
+    return total + spec[key] * getFacilityEfficiency(cell.facility);
+  }, 0);
+};
+
+export const getFactoryForecast = (base) => {
+  const nutrientSpec = FACILITY_SPECS[FACILITY_TYPES.NUTRIENT];
+  const nutrientCapacity = getNutrientCapacity(base);
+  const nutrientRatio = nutrientSpec.nutrientPerSol > 0
+    ? nutrientCapacity / nutrientSpec.nutrientPerSol
+    : 0;
+  const rootWater = base.potato ? getRootCapacity(base, 'water') : 0;
+  const rootNutrients = base.potato ? getRootCapacity(base, 'nutrients') : 0;
+  const waterIncome = getWaterIncome(base);
+  const mineralIncome = getMineralIncome(base);
+
+  return {
+    energy: {
+      income: getEnergyIncome(base),
+      drain: getFacilityUpkeep(base),
+    },
+    water: {
+      income: waterIncome,
+      drain: BASE_CREW_COUNT * WATER_PER_CREW
+        + nutrientSpec.waterInput * nutrientRatio
+        + rootWater,
+    },
+    minerals: {
+      income: mineralIncome,
+      drain: nutrientSpec.mineralInput * nutrientRatio,
+    },
+    nutrients: {
+      income: nutrientCapacity,
+      drain: rootNutrients,
+    },
+    delivery: {
+      water: rootWater,
+      nutrients: rootNutrients,
+    },
+  };
+};
+
+export const getFactoryBottleneck = (base) => {
+  const built = (type) => countBuiltFacilities(base, type).length > 0;
+  const forecast = getFactoryForecast(base);
+
+  if (!built(FACILITY_TYPES.EXTRACTOR)) {
+    return { kind: 'water', text: '先在坑壁阴影建造采冰器' };
+  }
+  if (!built(FACILITY_TYPES.SIFTER)) {
+    return { kind: 'minerals', text: '补一台矿物筛分机' };
+  }
+  if (!built(FACILITY_TYPES.NUTRIENT)) {
+    return { kind: 'nutrients', text: '建造营养合成器接上采集端' };
+  }
+  if (!built(FACILITY_TYPES.ROOT_FEEDER)) {
+    const hasOpenCoreNeighbour = getNeighbourCells(base, PLANTING_BED_ID)
+      .some((cell) => cell.cleared && !cell.use);
+    if (!hasOpenCoreNeighbour) {
+      return { kind: 'delivery', text: '先开垦一处中央邻格，再建造根区灌注器' };
+    }
+    return { kind: 'delivery', text: '在中央邻格建造根区灌注器' };
+  }
+  if (!base.potato) {
+    return { kind: 'planting', text: '在中央培育核心播下一颗种薯' };
+  }
+  if (base.facilitiesIdle || forecast.energy.income < forecast.energy.drain) {
+    return { kind: 'energy', text: '供电不足，扩建光伏阵或拆除冗余设施' };
+  }
+  if (forecast.water.income < forecast.water.drain) {
+    return { kind: 'water', text: '水流量不足，增加采冰器' };
+  }
+  if (forecast.minerals.income < forecast.minerals.drain) {
+    return { kind: 'minerals', text: '矿物流量不足，增加筛分机' };
+  }
+  if (!built(FACILITY_TYPES.HEATER)) {
+    return { kind: 'thermal', text: '根区缺少热调节，成熟速度偏慢' };
+  }
+  if (!built(FACILITY_TYPES.SHIELD)) {
+    return { kind: 'stability', text: '中央核心尚无辐射遮蔽' };
+  }
+  return { kind: 'stable', text: '生产链完整，观察库存净流量' };
+};
+
 export const getStormSeverity = (index) => {
   if (index <= 1) return { zones: [FARM_ZONES.RIM], damagesFacilities: false };
   if (index <= 3) {
@@ -195,45 +354,44 @@ export const getStormSeverity = (index) => {
 const applyStormArrival = (colony, base) => {
   const severity = getStormSeverity(base.hazards.storm.index);
   let facilitiesHit = 0;
-  let potatoNote = null;
   let potato = base.potato;
-
-  // 超级土豆在坑底，只有升级到全区的风暴才够得着它，
-  // 且遮蔽棚（自身或相邻）能完全挡下。挡不住也不会死，
-  // 而是折损养护质量 —— 收获的体积会小一圈。
-  const bed = getPlantingBed(base);
+  let potatoNote = null;
 
   if (
     potato
-    && bed
-    && severity.zones.includes(bed.zone)
-    && !isShielded(base, bed.id)
+    && severity.zones.includes(FARM_ZONES.FLOOR)
+    && !isShielded(base, PLANTING_BED_ID)
   ) {
     const shelter = base.environment.shelter ?? 30;
     const bite = clamp(0.3 - (shelter / 100) * 0.18, 0.1, 0.3);
-    potato = { ...potato, quality: Math.max(0, potato.quality - bite) };
-    potatoNote = '超级土豆被沙尘打伤，体积受损';
+    potato = {
+      ...potato,
+      quality: Math.max(0, potato.quality - bite),
+      stability: Math.max(0, (potato.stability ?? 0.3) - bite),
+    };
+    potatoNote = '中央土豆被沙尘打伤';
   }
 
   const cells = base.cells.map((cell) => {
-    if (isShielded(base, cell.id)) return cell;
-    if (!severity.zones.includes(cell.zone)) return cell;
-    if (!severity.damagesFacilities || !cell.facility) return cell;
+    if (!cell.facility || isShielded(base, cell.id)) return cell;
+    if (!severity.zones.includes(cell.zone) || !severity.damagesFacilities) {
+      return cell;
+    }
 
     facilitiesHit += 1;
+    const integrity = Math.max(0, cell.facility.integrity - 20);
     return {
       ...cell,
       facility: {
         ...cell.facility,
-        integrity: Math.max(0, cell.facility.integrity - 20),
+        integrity,
+        status: getFacilityStatus(
+          { ...cell.facility, integrity },
+          base.facilitiesIdle
+        ),
       },
     };
   });
-
-  const summary = [
-    potatoNote,
-    facilitiesHit > 0 ? `${facilitiesHit} 座设施受损` : null,
-  ].filter(Boolean).join('，') || '基地未受损失';
 
   return {
     cells,
@@ -246,11 +404,113 @@ const applyStormArrival = (colony, base) => {
         base.hazards.storm.index + 1
       ),
     },
-    summary,
+    summary: [
+      potatoNote,
+      facilitiesHit > 0 ? `${facilitiesHit} 座设施受损` : null,
+    ].filter(Boolean).join('，') || '基地未受损失',
   };
 };
 
-// ─── 每 SOL 推进 ───────────────────────────────────────────────
+const advanceConstruction = (base, sol) => {
+  const completed = [];
+  const cells = base.cells.map((cell) => {
+    if (!cell.facility || cell.facility.buildRemaining <= 0) return cell;
+
+    const buildRemaining = Math.max(0, cell.facility.buildRemaining - 1);
+    if (buildRemaining === 0) {
+      completed.push(FACILITY_SPECS[cell.facility.type].label);
+    }
+
+    return {
+      ...cell,
+      facility: {
+        ...cell.facility,
+        buildRemaining,
+        completedSol: buildRemaining === 0 ? sol : cell.facility.completedSol,
+        status: buildRemaining > 0
+          ? FACILITY_STATUS.BUILDING
+          : FACILITY_STATUS.RUNNING,
+      },
+    };
+  });
+
+  return { cells, completed };
+};
+
+const processNutrients = (base, water, minerals, nutrients) => {
+  const spec = FACILITY_SPECS[FACILITY_TYPES.NUTRIENT];
+  let nextWater = water;
+  let nextMinerals = minerals;
+  let nextNutrients = nutrients;
+
+  base.cells.forEach((cell) => {
+    if (!isFacilityOperational(base, cell, FACILITY_TYPES.NUTRIENT)) return;
+
+    const efficiency = getNutrientEfficiency(base, cell);
+    const desiredWater = spec.waterInput * efficiency;
+    const desiredMinerals = spec.mineralInput * efficiency;
+    const inputShare = Math.min(
+      1,
+      desiredWater > 0 ? nextWater / desiredWater : 1,
+      desiredMinerals > 0 ? nextMinerals / desiredMinerals : 1
+    );
+    const output = spec.nutrientPerSol * efficiency * inputShare;
+
+    nextWater -= desiredWater * inputShare;
+    nextMinerals -= desiredMinerals * inputShare;
+    nextNutrients = Math.min(base.caps.nutrients, nextNutrients + output);
+  });
+
+  return {
+    water: nextWater,
+    minerals: nextMinerals,
+    nutrients: nextNutrients,
+  };
+};
+
+const feedPotato = (base, water, nutrients) => {
+  if (!hasGrowingPotato(base)) {
+    return {
+      water,
+      nutrients,
+      hydration: 0,
+      nutrition: 0,
+      thermal: 0,
+      stability: 0,
+    };
+  }
+
+  const waterCapacity = getRootCapacity(base, 'water');
+  const nutrientCapacity = getRootCapacity(base, 'nutrients');
+  const waterTarget = Math.min(WATER_PER_POTATO, waterCapacity);
+  const nutrientTarget = Math.min(2, nutrientCapacity);
+  const waterDelivered = Math.min(water, waterTarget);
+  const nutrientDelivered = Math.min(nutrients, nutrientTarget);
+  const heat = getCoreFacilityPower(
+    base,
+    FACILITY_TYPES.HEATER,
+    FACILITY_SPECS[FACILITY_TYPES.HEATER].thermalPerSol
+  );
+  const shield = getCoreFacilityPower(
+    base,
+    FACILITY_TYPES.SHIELD,
+    FACILITY_SPECS[FACILITY_TYPES.SHIELD].stabilityPerSol
+  );
+
+  return {
+    water: water - waterDelivered,
+    nutrients: nutrients - nutrientDelivered,
+    // 没有完整工厂仍有低效人工维生，不会形成不可恢复死锁。
+    hydration: waterCapacity > 0
+      ? clamp(waterDelivered / WATER_PER_POTATO, 0, 1)
+      : 0.12,
+    nutrition: nutrientCapacity > 0
+      ? clamp(nutrientDelivered / 2, 0, 1)
+      : 0.05,
+    thermal: clamp(0.25 + heat, 0, 1),
+    stability: clamp(0.3 + shield, 0, 1),
+  };
+};
 
 export const advanceColonySol = (colony) => {
   if (!colony || colony.outcome) return colony;
@@ -259,94 +519,120 @@ export const advanceColonySol = (colony) => {
   let next = { ...colony, sol: colony.sol + 1 };
   let base = { ...next.bases[baseId] };
 
-  // 能量：先进账再付维持费，超出上限的部分溢出（蓄电组抬高上限）。
+  const construction = advanceConstruction(base, next.sol);
+  base.cells = construction.cells;
+
   const energyCap = getEnergyCap(base);
-  let energy = Math.min(energyCap, base.stores.energy + getEnergyIncome(base));
+  let energy = Math.min(
+    energyCap,
+    base.stores.energy + REACTOR_ENERGY_PER_SOL + getRawSolarIncome(base)
+  );
   const upkeep = getFacilityUpkeep(base);
   const facilitiesIdle = upkeep > energy;
-
-  // 付不出维持费时设施不是「关机待命」而是掉电停转：能拿的能量照样
-  // 被抽干。否则下一个 SOL 攒够了又能开机，基地在开停之间无限震荡，
-  // 断电永远累积不到失败线。掉电后想恢复只能拆设施 —— 这才是决策。
   energy = Math.max(0, energy - upkeep);
 
   const wasIdle = base.facilitiesIdle;
   base.facilitiesIdle = facilitiesIdle;
   base.blackoutSols = facilitiesIdle ? base.blackoutSols + 1 : 0;
+  base.cells = base.cells.map((cell) => (
+    cell.facility
+      ? {
+        ...cell,
+        facility: {
+          ...cell.facility,
+          status: getFacilityStatus(cell.facility, facilitiesIdle),
+        },
+      }
+      : cell
+  ));
 
-  // 水：设施停转时采冰器也停，这让「能量不足」真的会连锁到缺水，
-  // 但基础冷凝回收不依赖电力，始终保底。与能量一样有上限 ——
-  // 无上限的资源在第一次建造后就不再是约束。
-  const water = Math.min(
-    getWaterCap(base),
+  let water = Math.min(
+    base.caps.water,
     base.stores.water
-      + (facilitiesIdle ? BASE_WATER_RECLAIM : getWaterIncome(base))
+      + (facilitiesIdle ? BASE_WATER_RECLAIM : getRawWaterIncome(base))
   );
+  let minerals = Math.min(
+    base.caps.minerals,
+    base.stores.minerals
+      + (facilitiesIdle ? 0 : getRawMineralIncome(base))
+  );
+  let nutrients = base.stores.nutrients;
 
-  // 灌溉：超级土豆优先，队伍其次。浇够水的比例累积成养护质量，
-  // 直接决定最终收获的体积 —— 断水不会让它死，但会让它长不大。
-  let waterBudget = water;
+  if (!facilitiesIdle) {
+    const processed = processNutrients(base, water, minerals, nutrients);
+    water = processed.water;
+    minerals = processed.minerals;
+    nutrients = processed.nutrients;
+  }
+
+  const crewDraw = Math.min(water, BASE_CREW_COUNT * WATER_PER_CREW);
+  water -= crewDraw;
+
+  const feeding = feedPotato(base, water, nutrients);
+  water = feeding.water;
+  nutrients = feeding.nutrients;
+
   let potato = base.potato;
-
-  if (potato && potato.status === POTATO_STATUS.GROWING) {
-    const share = Math.min(1, waterBudget / WATER_PER_POTATO);
-    waterBudget = Math.max(0, waterBudget - WATER_PER_POTATO);
-
-    const bed = getPlantingBed(base);
-    const heaters = bed
-      ? getNeighbourCells(base, bed.id).filter(
-        (cell) => isFacility(cell, FACILITY_TYPES.HEATER)
-      ).length
-      : 0;
-    // 单 SOL 的养护评分：水占七成、加热覆盖占三成。
-    const solQuality = share * 0.7
-      + Math.min(1, heaters / 2) * 0.3 * (base.facilitiesIdle ? 0 : 1);
-    // 关键：水决定「长多大」，不决定「长多久」。生长进度按固定节奏
-    // 走完，缺水只压低养护质量（也就是最终体积）。否则断水会让
-    // 成熟遥遥无期，玩家对着一棵永远长不完的土豆干等 —— 那是惩罚
-    // 时间而不是惩罚决策。
+  if (hasGrowingPotato(base)) {
+    const solQuality = feeding.hydration * 0.35
+      + feeding.nutrition * 0.35
+      + feeding.thermal * 0.15
+      + feeding.stability * 0.15;
     const growth = potato.growth + getPotatoGrowthRate(next, base);
     const solsGrown = potato.solsGrown + 1;
+    const average = (key, value) => (
+      ((potato[key] ?? 0) * potato.solsGrown + value) / solsGrown
+    );
 
     potato = {
       ...potato,
       growth: Math.min(100, growth),
       solsGrown,
-      // 质量是全生长期的滑动平均，一两个 SOL 断水不至于毁掉整棵。
+      hydration: average('hydration', feeding.hydration),
+      nutrition: average('nutrition', feeding.nutrition),
+      thermal: average('thermal', feeding.thermal),
+      stability: average('stability', feeding.stability),
       quality: (potato.quality * potato.solsGrown + solQuality) / solsGrown,
       status: growth >= 100 ? POTATO_STATUS.READY : POTATO_STATUS.GROWING,
     };
   }
 
-  const crewDraw = Math.min(waterBudget, BASE_CREW_COUNT * WATER_PER_CREW);
-  waterBudget -= crewDraw;
-
   base.potato = potato;
-  base.stores = { ...base.stores, water: waterBudget, energy };
+  base.stores = {
+    ...base.stores,
+    water,
+    energy,
+    minerals,
+    nutrients,
+  };
   next = patchBase(next, baseId, base);
 
+  if (construction.completed.length > 0) {
+    next = withLog(
+      next,
+      `${construction.completed.join('、')}施工完成，接入工厂网络。`
+    );
+  }
   if (facilitiesIdle && !wasIdle) {
-    next = withLog(next, '能量不足，全部设施停转。');
+    next = withLog(next, '供电低于全厂维持需求，生产链停转。');
   }
 
-  // 寒潮：加热桩答得了，遮蔽棚答不了。
   if (next.sol >= base.hazards.coldSnap.arriveSol) {
     base = { ...next.bases[baseId] };
     base.hazards = {
       ...base.hazards,
       coldSnapUntilSol: next.sol + COLD_SNAP_DURATION,
+      lastColdSnapSol: next.sol,
       coldSnap: scheduleColdSnap(next.sol, base.hazards.coldSnap.index + 1),
     };
     next = patchBase(next, baseId, base);
     next = withLog(
       next,
-      `寒潮来袭：未被加热桩覆盖的地块生长骤降，持续 ${COLD_SNAP_DURATION} SOL。`
+      `寒潮来袭：没有热调节的中央根区生长减慢，持续 ${COLD_SNAP_DURATION} SOL。`
     );
   }
 
-  // 沙尘暴：预告与到达。
   base = next.bases[baseId];
-
   if (next.sol === base.hazards.storm.announceSol) {
     const severity = getStormSeverity(base.hazards.storm.index);
     next = withLog(
@@ -361,31 +647,24 @@ export const advanceColonySol = (colony) => {
     const resolved = applyStormArrival(next, base);
     next = patchBase(next, baseId, {
       cells: resolved.cells,
-      hazards: resolved.hazards,
+      potato: resolved.potato,
+      hazards: { ...resolved.hazards, lastStormSol: next.sol },
     });
     next = withLog(next, `沙尘暴过境：${resolved.summary}。`);
   }
 
-  // 失败条件三：绝产。没有在长的作物、没有种薯，且手上的块茎也
-  // 换不出能种满一格的种薯 —— 基地不会再产出任何东西。这是死局，
-  // 必须立刻结算，而不是让玩家对着一个不再变化的画面等到合约超期。
-  //
-  // 注意判定的是「有没有下一株」，不是「块茎够不够多」：囤着一堆
-  // 块茎却一格没种，同样是死局。
   const stalled = next.bases[baseId];
   const canSowAgain = stalled.stores.seedStock >= 1
     || stalled.stores.tubers >= TUBERS_PER_SEED;
-
   if (!stalled.potato && !canSowAgain) {
     return {
-      ...withLog(next, '最后一颗种薯用尽，且没有可收获的作物。基地绝产。'),
+      ...withLog(next, '最后一颗种薯用尽，基地绝产。'),
       outcome: COLONY_OUTCOMES.LOST,
       lossReason: LOSS_REASONS.SEED,
     };
   }
 
-  // 失败条件一：断电过久。
-  if (next.bases[baseId].blackoutSols >= BLACKOUT_LOSS_SOLS) {
+  if (stalled.blackoutSols >= BLACKOUT_LOSS_SOLS) {
     return {
       ...withLog(next, `连续 ${BLACKOUT_LOSS_SOLS} SOL 断电，基地停摆。`),
       outcome: COLONY_OUTCOMES.LOST,
@@ -393,11 +672,9 @@ export const advanceColonySol = (colony) => {
     };
   }
 
-  // 失败条件二：合约违约。
   const expired = next.contracts.find(
     (contract) => contract.status === 'open' && next.sol > contract.deadlineSol
   );
-
   if (expired) {
     return {
       ...withLog(next, `合约「${expired.label}」违约，基地失败。`),
@@ -414,11 +691,6 @@ export const advanceColonySol = (colony) => {
   return next;
 };
 
-// ─── 操作 ─────────────────────────────────────────────────────
-//
-// 每个操作在守卫不通过时返回**同一个引用**，调用方可以用引用相等
-// 判断「这次点击有没有生效」。canApplyTool 与这些守卫必须一致。
-
 const updateBase = (colony, patch, logText) => {
   const next = patchBase(colony, colony.activeBaseId, patch);
   return logText ? withLog(next, logText) : next;
@@ -427,7 +699,6 @@ const updateBase = (colony, patch, logText) => {
 export const clearCell = (colony, cellId) => {
   const base = getActiveBase(colony);
   const cell = getCell(base, cellId);
-
   if (
     !cell || colony.outcome || cell.cleared || base.stores.energy < CLEAR_COST
   ) {
@@ -435,22 +706,19 @@ export const clearCell = (colony, cellId) => {
   }
 
   const cleared = patchCell(base, cellId, { cleared: true });
-
   return updateBase(
     colony,
     {
       cells: cleared.cells,
       stores: { ...base.stores, energy: base.stores.energy - CLEAR_COST },
     },
-    `${getZoneSpec(cell.zone).label}新开垦一块地。`
+    `${getZoneSpec(cell.zone).label}新开垦一个工厂位。`
   );
 };
 
-// 种下唯一那棵超级土豆。只有种植床能种。
 export const plantCell = (colony, cellId) => {
   const base = getActiveBase(colony);
   const cell = getCell(base, cellId);
-
   if (
     !cell
     || colony.outcome
@@ -470,18 +738,21 @@ export const plantCell = (colony, cellId) => {
         growth: 0,
         solsGrown: 0,
         quality: 0,
+        hydration: 0,
+        nutrition: 0,
+        thermal: 0,
+        stability: 0,
         plantedSol: colony.sol,
       },
       stores: { ...base.stores, seedStock: base.stores.seedStock - 1 },
     },
-    '种植床播下一颗种薯。这个坑只养得起这一棵。'
+    '中央培育核心播下一颗种薯。'
   );
 };
 
 export const harvestCell = (colony, cellId) => {
   const base = getActiveBase(colony);
   const cell = getCell(base, cellId);
-
   if (
     !cell
     || colony.outcome
@@ -506,19 +777,26 @@ export const harvestCell = (colony, cellId) => {
   );
 };
 
+const canPlaceFacility = (base, cell, type) => {
+  const spec = FACILITY_SPECS[type];
+  if (!cell || !spec || cell.isPlantingBed || !cell.cleared || cell.use) {
+    return false;
+  }
+  if (!spec.allowedZones.includes(cell.zone)) return false;
+  // 中央七格是培育核心的扩展接口。加工与供能设施即使区位允许，
+  // 也不能占走根灌、加热、遮蔽所需的唯一邻接位。
+  if (isCoreNeighbour(cell.id) && !spec.requiresCoreAdjacency) return false;
+  if (spec.requiresCoreAdjacency && !isCoreNeighbour(cell.id)) return false;
+  return true;
+};
+
 export const buildFacility = (colony, cellId, type) => {
   const base = getActiveBase(colony);
   const cell = getCell(base, cellId);
   const spec = FACILITY_SPECS[type];
-
   if (
-    !cell
-    || !spec
-    || colony.outcome
-    // 种植床是唯一能长土豆的地方，不能被设施占掉。
-    || cell.isPlantingBed
-    || !cell.cleared
-    || cell.use
+    colony.outcome
+    || !canPlaceFacility(base, cell, type)
     || base.stores.energy < spec.cost
   ) {
     return colony;
@@ -526,7 +804,13 @@ export const buildFacility = (colony, cellId, type) => {
 
   const built = patchCell(base, cellId, {
     use: CELL_USES.FACILITY,
-    facility: { type, integrity: 100 },
+    facility: {
+      type,
+      integrity: 100,
+      buildRemaining: spec.buildSols,
+      completedSol: null,
+      status: FACILITY_STATUS.BUILDING,
+    },
   });
 
   return updateBase(
@@ -535,19 +819,52 @@ export const buildFacility = (colony, cellId, type) => {
       cells: built.cells,
       stores: { ...base.stores, energy: base.stores.energy - spec.cost },
     },
-    `${getZoneSpec(cell.zone).label}建成${spec.label}。`
+    `${spec.label}开始施工，预计 ${spec.buildSols} SOL 完成。`
+  );
+};
+
+export const getRepairCost = (facility) => {
+  if (!facility || facility.integrity >= 100 || facility.buildRemaining > 0) {
+    return 0;
+  }
+  return Math.max(2, Math.ceil((100 - facility.integrity) / 20) * 2);
+};
+
+export const repairFacility = (colony, cellId) => {
+  const base = getActiveBase(colony);
+  const cell = getCell(base, cellId);
+  const cost = getRepairCost(cell?.facility);
+  if (!cell || colony.outcome || cost === 0 || base.stores.energy < cost) {
+    return colony;
+  }
+
+  const repaired = patchCell(base, cellId, {
+    facility: {
+      ...cell.facility,
+      integrity: 100,
+      status: base.facilitiesIdle
+        ? FACILITY_STATUS.STOPPED
+        : FACILITY_STATUS.RUNNING,
+    },
+  });
+
+  return updateBase(
+    colony,
+    {
+      cells: repaired.cells,
+      stores: { ...base.stores, energy: base.stores.energy - cost },
+    },
+    `${FACILITY_SPECS[cell.facility.type].label}维修完成，消耗 ${cost} 能量。`
   );
 };
 
 export const demolishCell = (colony, cellId) => {
   const base = getActiveBase(colony);
   const cell = getCell(base, cellId);
-
   if (!cell || colony.outcome || !cell.facility) return colony;
 
   const spec = FACILITY_SPECS[cell.facility.type];
-  // 拆除返还一半建造费，取整向下。
-  const refund = Math.floor(spec.cost / 2);
+  const refund = Math.floor(spec.cost * 0.4);
   const razed = patchCell(base, cellId, { use: null, facility: null });
 
   return updateBase(
@@ -566,7 +883,6 @@ export const demolishCell = (colony, cellId) => {
 export const convertTubersToSeeds = (colony, seedCount = 1) => {
   const base = getActiveBase(colony);
   const cost = seedCount * TUBERS_PER_SEED;
-
   if (colony.outcome || seedCount < 1 || base.stores.tubers < cost) {
     return colony;
   }
@@ -587,7 +903,6 @@ export const convertTubersToSeeds = (colony, seedCount = 1) => {
 export const deliverContract = (colony, contractId) => {
   const base = getActiveBase(colony);
   const contract = colony.contracts.find((item) => item.id === contractId);
-
   if (
     !contract
     || colony.outcome
@@ -607,7 +922,6 @@ export const deliverContract = (colony, contractId) => {
       ),
     },
   });
-
   next = {
     ...next,
     contracts: next.contracts.map((item) => (
@@ -621,20 +935,15 @@ export const deliverContract = (colony, contractId) => {
     : next;
 };
 
-// 工具对某格当前是否可用。3D 场景高亮与 HUD 提示共用这一份判定，
-// 与上面各操作的守卫严格一致 —— 高亮了却点不动是最糟的经营手感。
 export const canApplyTool = (colony, cellId, tool) => {
   if (!colony || colony.outcome) return false;
-
   const base = getActiveBase(colony);
   const cell = getCell(base, cellId);
-
   if (!cell) return false;
 
   if (tool === TOOL_MODES.CLEAR) {
     return !cell.cleared && base.stores.energy >= CLEAR_COST;
   }
-
   if (!cell.cleared) return false;
 
   switch (tool) {
@@ -645,62 +954,75 @@ export const canApplyTool = (colony, cellId, tool) => {
     case TOOL_MODES.HARVEST:
       return cell.isPlantingBed
         && base.potato?.status === POTATO_STATUS.READY;
+    case TOOL_MODES.REPAIR: {
+      const cost = getRepairCost(cell.facility);
+      return cost > 0 && base.stores.energy >= cost;
+    }
     case TOOL_MODES.DEMOLISH:
       return Boolean(cell.facility);
     default: {
       const facilityType = TOOL_FACILITY[tool];
-      if (!facilityType) return false;
-
-      // 种植床不能被设施占掉。
-      return !cell.isPlantingBed
-        && !cell.use
-        && base.stores.energy >= FACILITY_SPECS[facilityType].cost;
+      return Boolean(
+        facilityType
+        && canPlaceFacility(base, cell, facilityType)
+        && base.stores.energy >= FACILITY_SPECS[facilityType].cost
+      );
     }
   }
 };
 
-// 决策点探测。自动暂停与「跳到下一节点」共用这一份判定 ——
-// 节奏因此由玩家的决策密度决定，而不是由时钟强制的等待决定。
-// urgency 3：不处理就会亏损或失败，自动暂停。
-// urgency 2：值得停下来看一眼，跳转会停在这里。
-// urgency 1：提示性质，不打断。
 export const getDecisionPoints = (colony) => {
   if (!colony || colony.outcome) return [];
-
   const base = getActiveBase(colony);
   const points = [];
-  const water = base.stores.water;
-  const waterNet = (base.facilitiesIdle ? BASE_WATER_RECLAIM : getWaterIncome(base))
-    - getWaterDrain(base);
+  const forecast = getFactoryForecast(base);
 
-  if (waterNet < -0.05 && water / -waterNet <= 3) {
+  if (base.cells.some(
+    (cell) => cell.facility?.completedSol === colony.sol
+  )) {
+    points.push({ kind: 'construction-complete', urgency: 2 });
+  }
+  if (base.hazards.lastStormSol === colony.sol) {
+    points.push({ kind: 'storm-arrival', urgency: 3 });
+  }
+  if (base.hazards.lastColdSnapSol === colony.sol) {
+    points.push({ kind: 'cold-snap-arrival', urgency: 2 });
+  }
+  colony.contracts
+    .filter((contract) => contract.status === 'open')
+    .forEach((contract) => {
+      const remaining = contract.deadlineSol - colony.sol;
+      if (remaining >= 0 && remaining <= 1) {
+        points.push({
+          kind: 'contract-deadline',
+          urgency: 3,
+          contractId: contract.id,
+          remaining,
+        });
+      }
+    });
+
+  if (
+    forecast.water.income < forecast.water.drain
+    && base.stores.water / Math.max(0.01, forecast.water.drain - forecast.water.income) <= 3
+  ) {
     points.push({ kind: 'water-critical', urgency: 3 });
   }
-  if (base.facilitiesIdle) {
-    points.push({ kind: 'blackout', urgency: 3 });
-  }
+  if (base.facilitiesIdle) points.push({ kind: 'blackout', urgency: 3 });
   if (
     colony.sol === base.hazards.storm.announceSol
-    || (colony.sol > base.hazards.storm.announceSol
-      && colony.sol < base.hazards.storm.arriveSol
-      && colony.sol === base.hazards.storm.arriveSol - 1)
+    || colony.sol === base.hazards.storm.arriveSol - 1
   ) {
     points.push({ kind: 'storm-warning', urgency: 3 });
   }
-  // 绝产前兆：种植床空着，且种薯也见底。
   if (!base.potato && base.stores.seedStock < 1) {
     points.push({ kind: 'production-stalled', urgency: 3 });
   }
-  // 养护告急：土豆在长但水跟不上，体积会缩水 —— 这是产量在流失，
-  // 不是「以后再说」的事。
-  if (
-    hasGrowingPotato(base)
-    && base.stores.water < WATER_PER_POTATO * 2
-    && waterNet < 0
-  ) {
-    points.push({ kind: 'potato-thirsty', urgency: 3 });
+  if (base.cells.some(
+    (cell) => cell.facility && cell.facility.integrity <= 40
+  )) {
+    points.push({ kind: 'repair-needed', urgency: 2 });
   }
-
   if (base.potato?.status === POTATO_STATUS.READY) {
     points.push({ kind: 'harvest-ready', urgency: 2 });
   }
@@ -710,28 +1032,18 @@ export const getDecisionPoints = (colony) => {
   )) {
     points.push({ kind: 'contract-deliverable', urgency: 2 });
   }
-  if (colony.contracts.some(
-    (contract) => contract.status === 'open'
-      && contract.deadlineSol - colony.sol === 5
-  )) {
-    points.push({ kind: 'deadline-near', urgency: 2 });
-  }
-  if (!base.potato) {
-    points.push({ kind: 'empty-bed', urgency: 1 });
-  }
-
+  if (!base.potato) points.push({ kind: 'empty-bed', urgency: 1 });
   return points;
 };
 
-// HUD 告警。
 export const getColonyAlerts = (colony) => {
   if (!colony) return [];
-
   const base = getActiveBase(colony);
   const alerts = [];
+  const bottleneck = getFactoryBottleneck(base);
 
-  if (hasGrowingPotato(base) && base.stores.water < WATER_PER_POTATO * 3) {
-    alerts.push({ kind: 'water', text: '水量告急，土豆将缩水' });
+  if (bottleneck.kind !== 'stable') {
+    alerts.push({ kind: bottleneck.kind, text: bottleneck.text });
   }
   if (base.facilitiesIdle) {
     alerts.push({
@@ -739,15 +1051,18 @@ export const getColonyAlerts = (colony) => {
       text: `设施停转 ${base.blackoutSols}/${BLACKOUT_LOSS_SOLS} SOL`,
     });
   }
+  if (base.cells.some(
+    (cell) => cell.facility && cell.facility.integrity < 65
+  )) {
+    alerts.push({ kind: 'repair', text: '工厂中有受损设施' });
+  }
   if (base.potato?.status === POTATO_STATUS.READY) {
     alerts.push({ kind: 'harvest', text: '超级土豆可收获' });
   }
-  // 种植床空着是可恢复的（有块茎就能转种薯），但玩家很容易没察觉
-  // 自己已经停产。不结算失败，只报警。
   if (!base.potato) {
     alerts.push({
       kind: 'idle',
-      text: base.stores.seedStock >= 1 ? '种植床空着' : '停产：需先留种',
+      text: base.stores.seedStock >= 1 ? '中央培育核心空着' : '停产：需先留种',
     });
   }
   if (colony.sol < base.hazards.coldSnapUntilSol) {
@@ -762,6 +1077,5 @@ export const getColonyAlerts = (colony) => {
       text: `沙尘暴 ${base.hazards.storm.arriveSol - colony.sol} SOL 后抵达`,
     });
   }
-
   return alerts;
 };
