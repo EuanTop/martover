@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { getNeighbourIds } from './baseLayout';
 import {
   advanceColonySol,
   buildFacility,
@@ -9,11 +10,11 @@ import {
   demolishCell,
   getColonyAlerts,
   getEnergyCap,
+  getPotatoYield,
   getStormSeverity,
   getWaterDrain,
   getWaterIncome,
   harvestCell,
-  isHeated,
   isShielded,
   plantCell,
 } from './colonyEconomy';
@@ -23,10 +24,13 @@ import {
   CLEAR_COST,
   COLONY_OUTCOMES,
   createColonyState,
-  CROP_STATUS,
   FACILITY_TYPES,
   getActiveBase,
   LOSS_REASONS,
+  PLANTING_BED_ID,
+  POTATO_BASE_YIELD,
+  POTATO_MAX_YIELD,
+  POTATO_STATUS,
   TOOL_MODES,
   TUBERS_PER_SEED,
 } from './colonyState';
@@ -113,18 +117,16 @@ describe('colonyEconomy', () => {
     expect(getEnergyCap(base(colony))).toBeGreaterThan(capBefore);
   });
 
-  it('cannot support many crop cells on a single extractor', () => {
-    // 旧实现：采冰器 +3 水，作物耗 1 水/格，最多 3 格 —— 水永久盈余。
-    // 现在队伍也喝水，且格数上限远高于产水能力。
+  it('draws far more water for the super potato than the crew alone', () => {
+    // 超级土豆是基地唯一的水槽大头：一台采冰器撑不住它 + 队伍。
     let colony = withStores(clearAll(createColonyState(crater)), {
-      energy: 40, seedStock: 12,
+      energy: 40, seedStock: 4,
     });
     colony = buildFacility(colony, 'shadow-2-1', FACILITY_TYPES.EXTRACTOR);
-    base(colony).cells
-      .filter((cell) => !cell.use)
-      .slice(0, 8)
-      .forEach((cell) => { colony = plantCell(colony, cell.id); });
+    const idleDrain = getWaterDrain(base(colony));
+    colony = plantCell(colony, PLANTING_BED_ID);
 
+    expect(getWaterDrain(base(colony))).toBeGreaterThan(idleDrain);
     expect(getWaterDrain(base(colony)))
       .toBeGreaterThan(getWaterIncome(base(colony)));
   });
@@ -141,52 +143,68 @@ describe('colonyEconomy', () => {
       .toBeGreaterThan(getWaterIncome(base(isolated)));
   });
 
-  it('grows a watered crop to ready and stalls it without water', () => {
+  it('grows the potato to ready, and starves its size without water', () => {
     let watered = withStores(createColonyState(crater), { water: 60 });
-    watered = plantCell(watered, 'floor-0-0');
-    watered = advance(watered, 20);
+    watered = plantCell(watered, PLANTING_BED_ID);
+    watered = advance(watered, 24);
 
-    expect(cellOf(watered, 'floor-0-0').crop.status).toBe(CROP_STATUS.READY);
+    expect(base(watered).potato.status).toBe(POTATO_STATUS.READY);
 
-    // 断水：把基础冷凝回收也消耗掉（多种几格抢水），生长应当落后。
-    let dry = withStores(clearAll(createColonyState(crater)), {
-      water: 0, seedStock: 20,
-    });
-    base(dry).cells.slice(0, 14).forEach((cell) => {
-      dry = plantCell(dry, cell.id);
-    });
-    dry = advance(dry, 6);
+    // 断水不会让它死，但会让它长不大 —— 收获量就是体积。
+    let dry = withStores(createColonyState(crater), { water: 0 });
+    dry = plantCell(dry, PLANTING_BED_ID);
+    dry = advance(dry, 24);
 
-    const starved = base(dry).cells.filter(
-      (cell) => cell.crop && cell.crop.growth === 0
-    ).length;
-    expect(starved).toBeGreaterThan(0);
+    expect(base(dry).potato.quality)
+      .toBeLessThan(base(watered).potato.quality);
+    expect(getPotatoYield(base(dry)))
+      .toBeLessThan(getPotatoYield(base(watered)));
   });
 
-  it('speeds growth on the heated cell and its neighbours', () => {
-    const plant = (colony, heaterCell) => {
-      let next = withStores(clearAll(colony), { energy: 40, water: 90 });
-      if (heaterCell) {
-        next = buildFacility(next, heaterCell, FACILITY_TYPES.HEATER);
-      }
-      next = plantCell(next, 'floor-1-0');
-      return advance(next, 6);
+  it('makes yield a function of care quality, not a hidden roll', () => {
+    // 「怎么伺候这一棵」直接就是产量。
+    const poor = { ...createColonyState(crater) };
+    poor.bases['base-01'] = {
+      ...poor.bases['base-01'],
+      potato: { status: POTATO_STATUS.READY, growth: 100, solsGrown: 16, quality: 0 },
     };
-    const neighbourId = ['floor-1-1', 'floor-0-0', 'floor-0-1']
-      .find((id) => isHeated(
-        base(buildFacility(
-          withStores(clearAll(createColonyState(crater)), { energy: 40 }),
-          id,
-          FACILITY_TYPES.HEATER
-        )),
-        'floor-1-0'
-      ));
+    const great = { ...createColonyState(crater) };
+    great.bases['base-01'] = {
+      ...great.bases['base-01'],
+      potato: { status: POTATO_STATUS.READY, growth: 100, solsGrown: 16, quality: 1 },
+    };
 
-    const plain = plant(createColonyState(crater), null);
-    const heated = plant(createColonyState(crater), neighbourId);
+    expect(getPotatoYield(base(poor))).toBe(POTATO_BASE_YIELD);
+    expect(getPotatoYield(base(great))).toBe(POTATO_MAX_YIELD);
+  });
 
-    expect(cellOf(heated, 'floor-1-0').crop.growth)
-      .toBeGreaterThan(cellOf(plain, 'floor-1-0').crop.growth);
+  it('speeds the potato only from heaters adjacent to the planting bed', () => {
+    // 种植床只有 3-5 个邻格，这几个位置的争夺就是布局的核心。
+    const neighbour = getNeighbourIds(PLANTING_BED_ID)[0];
+    const far = base(createColonyState(crater)).cells.find(
+      (cell) => cell.zone === 'rim'
+    ).id;
+
+    const run = (heaterCell) => {
+      let colony = withStores(clearAll(createColonyState(crater)), {
+        energy: 40, water: 90,
+      });
+      if (heaterCell) {
+        colony = buildFacility(colony, heaterCell, FACILITY_TYPES.HEATER);
+      }
+      colony = plantCell(colony, PLANTING_BED_ID);
+      return advance(colony, 6);
+    };
+
+    const plain = run(null);
+    const adjacent = run(neighbour);
+    const distant = run(far);
+
+    expect(base(adjacent).potato.growth)
+      .toBeGreaterThan(base(plain).potato.growth);
+    // 远处的加热桩对种植床毫无作用 —— 位置本身就是决策。
+    expect(base(distant).potato.growth)
+      .toBeCloseTo(base(plain).potato.growth, 5);
   });
 
   it('idles every facility when energy cannot cover upkeep', () => {
@@ -251,15 +269,14 @@ describe('colonyEconomy', () => {
     expect(base(colony).stores.energy - before).toBeLessThan(2);
   });
 
-  it('harvests yield, frees the cell and converts tubers to seeds', () => {
+  it('harvests the potato, frees the bed and converts tubers to seeds', () => {
     let colony = withStores(createColonyState(crater), { water: 60 });
-    colony = plantCell(colony, 'floor-0-0');
-    colony = advance(colony, 20);
-    colony = harvestCell(colony, 'floor-0-0');
+    colony = plantCell(colony, PLANTING_BED_ID);
+    colony = advance(colony, 24);
+    colony = harvestCell(colony, PLANTING_BED_ID);
 
-    expect(base(colony).stores.tubers).toBeGreaterThan(0);
-    expect(cellOf(colony, 'floor-0-0').crop).toBeNull();
-    expect(cellOf(colony, 'floor-0-0').use).toBeNull();
+    expect(base(colony).stores.tubers).toBeGreaterThanOrEqual(POTATO_BASE_YIELD);
+    expect(base(colony).potato).toBeNull();
 
     const tubers = base(colony).stores.tubers;
     const seeds = base(colony).stores.seedStock;
@@ -267,6 +284,27 @@ describe('colonyEconomy', () => {
 
     expect(base(colony).stores.tubers).toBe(tubers - TUBERS_PER_SEED);
     expect(base(colony).stores.seedStock).toBe(seeds + 1);
+  });
+
+  it('keeps the planting bed free of facilities', () => {
+    // 种植床是唯一能长土豆的地方，被设施占掉就等于断了唯一产出口。
+    const colony = withStores(createColonyState(crater), { energy: 40 });
+
+    expect(buildFacility(colony, PLANTING_BED_ID, FACILITY_TYPES.HEATER))
+      .toBe(colony);
+    expect(canApplyTool(colony, PLANTING_BED_ID, TOOL_MODES.BUILD_HEATER))
+      .toBe(false);
+  });
+
+  it('allows only one potato at a time', () => {
+    let colony = withStores(createColonyState(crater), { seedStock: 4 });
+    colony = plantCell(colony, PLANTING_BED_ID);
+
+    // 已经有一棵了，再种是空操作。
+    expect(plantCell(colony, PLANTING_BED_ID)).toBe(colony);
+    // 别的格子也种不了 —— 一个坑只有一棵。
+    const other = base(colony).cells.find((cell) => !cell.isPlantingBed);
+    expect(plantCell(colony, other.id)).toBe(colony);
   });
 
   it('spends energy to clear a cell and refunds half when demolishing', () => {
@@ -404,14 +442,13 @@ describe('colonyEconomy', () => {
   });
 
   it('reclaims enough water on its own to reach the first harvest', () => {
-    // 开局没有采冰器：3 格作物耗 4.2 水/SOL，30 起始水撑不到成熟。
-    // 基础冷凝回收保证「第一批作物能长成」，否则开局是无解的死局 ——
-    // 那时的能量还买不起采冰器。
+    // 开局没有采冰器：基础冷凝回收保证第一棵土豆能长成（哪怕干瘪），
+    // 否则开局是无解的死局 —— 那时的能量还买不起采冰器。
     let colony = createColonyState(crater);
-    colony = plantCell(colony, 'floor-0-0');
-    colony = advance(colony, 20);
+    colony = plantCell(colony, PLANTING_BED_ID);
+    colony = advance(colony, 26);
 
-    expect(cellOf(colony, 'floor-0-0').crop.status).toBe(CROP_STATUS.READY);
+    expect(base(colony).potato.status).toBe(POTATO_STATUS.READY);
   });
 
   it('lets a plain three-cell rotation meet the first contract in time', () => {

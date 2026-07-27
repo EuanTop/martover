@@ -15,30 +15,27 @@ import {
   createCraterTerrainGeometry,
   createRockDetailTexture,
   getCraterSeed,
-  PotatoPlant,
   sampleTerrain,
 } from './CraterCultivationScene';
 import {
   getCraterDisplayScale,
   getCraterMountRadius,
 } from './craterVisualModel';
+import SuperPotato from './SuperPotato';
 import { calculateCraterPosition } from './worldCoordinates';
 import { createCellLattice } from '../economy/baseLayout';
-import { canApplyTool, isShielded } from '../economy/colonyEconomy';
+import { canApplyTool } from '../economy/colonyEconomy';
 import {
-  CROP_STATUS,
   FACILITY_SPECS,
   FACILITY_TYPES,
   getZoneSpec,
+  POTATO_STATUS,
 } from '../economy/colonyState';
-import { seededUnit, stableHash } from '../util/deterministic';
 import { useCursorStore } from '../../store';
 
 // 26 格之下每格只有 0.043-0.060 局部单位，标签字号必须同步缩小，
 // 且只在需要时渲染 —— 26 个常驻 troika Text 既费帧又互相重叠。
 const LABEL_FONT_SIZE = 0.016;
-// 每格最多两株：格子比旧的 6 格版小约 3 倍。
-const PLANTS_PER_CELL = 2;
 
 const ExtractorModel = () => (
   <group>
@@ -137,18 +134,25 @@ const FACILITY_MODELS = Object.freeze({
   [FACILITY_TYPES.SHIELD]: ShieldModel,
 });
 
-const getCellTone = (cell) => {
-  if (!cell.cleared) return '#4a3226';
-  if (cell.crop?.status === CROP_STATUS.READY) return '#ffd27f';
-  if (cell.crop) return '#8fae6f';
+const getCellTone = (cell, base) => {
+  if (!cell.cleared) return '#c8916a';
+  if (cell.isPlantingBed) {
+    if (base.potato?.status === POTATO_STATUS.READY) return '#ffd27f';
+    if (base.potato) return '#8fae6f';
+    return '#f0dcc0';
+  }
   if (cell.facility) return '#c4a184';
   return '#e8c9a8';
 };
 
-// 待收获时脉冲，把「该点这里了」推到玩家眼前。
-const CellRing = ({ cell, radius }) => {
+// 地块边框。旧实现环宽只有半径的 12%（0.9→1.02），26 格改小后
+// 每格才 0.043-0.060 局部单位，这圈线细到几乎看不见；未开垦格更是
+// 深棕画在深色土面上，等于没画。现在加粗到 24% 并抬高对比度，
+// 未开垦格改用虚线感的高亮色 —— 玩家必须一眼看出哪里能点。
+const CellRing = ({ cell, base, radius }) => {
   const ringRef = React.useRef();
-  const isReady = cell.crop?.status === CROP_STATUS.READY;
+  const isReady = cell.isPlantingBed
+    && base.potato?.status === POTATO_STATUS.READY;
 
   useFrame((state) => {
     if (!ringRef.current) return;
@@ -159,17 +163,31 @@ const CellRing = ({ cell, radius }) => {
 
   return (
     <mesh ref={ringRef} position={[0, 0.006, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-      <ringGeometry args={[radius * 0.9, radius * 1.02, 24]} />
+      <ringGeometry args={[radius * 0.82, radius * 1.06, 28]} />
       <meshBasicMaterial
-        color={getCellTone(cell)}
+        color={getCellTone(cell, base)}
         transparent
-        opacity={cell.cleared ? 0.85 : 0.3}
+        opacity={cell.cleared ? 0.92 : 0.7}
         depthWrite={false}
         side={THREE.DoubleSide}
       />
     </mesh>
   );
 };
+
+// 种植床的常驻标记：这是全坑唯一能种土豆的地方，必须一眼认出来。
+const PlantingBedMarker = ({ radius }) => (
+  <mesh position={[0, 0.005, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+    <ringGeometry args={[radius * 1.16, radius * 1.42, 4]} />
+    <meshBasicMaterial
+      color="#ffe9c8"
+      transparent
+      opacity={0.5}
+      depthWrite={false}
+      side={THREE.DoubleSide}
+    />
+  </mesh>
+);
 
 // 工具选中时的可用格高亮环。
 const EligibleRing = ({ radius }) => {
@@ -211,10 +229,13 @@ const CoverageDisc = ({ radius, color }) => (
   </mesh>
 );
 
-const getCellCaption = (cell) => {
+const getCellCaption = (cell, base) => {
   if (!cell.cleared) return '待开垦';
-  if (cell.crop?.status === CROP_STATUS.READY) return '可收获';
-  if (cell.crop) return `${Math.round(cell.crop.growth)}%`;
+  if (cell.isPlantingBed) {
+    if (base.potato?.status === POTATO_STATUS.READY) return '可收获';
+    if (base.potato) return `${Math.round(base.potato.growth)}%`;
+    return '种植床 · 空';
+  }
   if (cell.facility) return FACILITY_SPECS[cell.facility.type].label;
   return '空地';
 };
@@ -232,23 +253,12 @@ const ColonyCell = ({
     ? canApplyTool(colony, cell.id, selectedTool)
     : false;
   const dimmed = Boolean(selectedTool) && !eligible;
-  const isReady = cell.crop?.status === CROP_STATUS.READY;
-
-  const plants = useMemo(() => (
-    Array.from({ length: PLANTS_PER_CELL }, (_, index) => ({
-      position: [
-        Math.cos(index * 2.6 + layout.angle) * radius * 0.4,
-        0,
-        Math.sin(index * 2.6 + layout.angle) * radius * 0.4,
-      ],
-      // 抖动下标用 stableHash(id)：旧实现用 id.length，同长度的 id
-      // 会拿到完全相同的抖动。
-      variant: 0.9 + seededUnit(seed, stableHash(`${cell.id}|${index}`)) * 0.2,
-    }))
-  ), [cell.id, layout.angle, radius, seed]);
+  const isReady = cell.isPlantingBed
+    && base.potato?.status === POTATO_STATUS.READY;
 
   // 标签按需渲染：26 个常驻 troika Text 太费，且在新尺寸下会重叠。
-  const showLabel = hovered || eligible || isReady;
+  // 种植床永远显示 —— 它是全坑唯一的产出口。
+  const showLabel = hovered || eligible || isReady || cell.isPlantingBed;
 
   return (
     <group position={[layout.x, layout.height + 0.004, layout.z]}>
@@ -263,7 +273,8 @@ const ColonyCell = ({
         />
       </mesh>
 
-      <CellRing cell={cell} radius={radius} />
+      <CellRing cell={cell} base={base} radius={radius} />
+      {cell.isPlantingBed && <PlantingBedMarker radius={radius} />}
       {eligible && <EligibleRing radius={radius} />}
 
       {cell.facility?.type === FACILITY_TYPES.SHIELD && (
@@ -273,17 +284,15 @@ const ColonyCell = ({
         <CoverageDisc radius={radius} color="#ff9d55" />
       )}
 
-      {cell.crop && cell.crop.growth >= 12 && plants.map((plant, index) => (
-        <PotatoPlant
-          key={index}
-          basePosition={plant.position}
-          index={index}
-          growth={cell.crop.growth / 100}
-          vigor={80}
-          stress={isShielded(base, cell.id) ? 20 : 32}
-          variant={plant.variant}
+      {/* 全坑唯一的那棵超级土豆。渲染预算全砸在它身上。 */}
+      {cell.isPlantingBed && base.potato && (
+        <SuperPotato
+          growth={base.potato.growth}
+          quality={base.potato.quality}
+          seed={seed}
+          radius={radius}
         />
-      ))}
+      )}
 
       {FacilityModel && <FacilityModel radius={radius} />}
 
@@ -297,9 +306,9 @@ const ColonyCell = ({
             anchorX="center"
             anchorY="middle"
           >
-            {getZoneSpec(cell.zone).label}
-            {' · '}
-            {getCellCaption(cell)}
+            {cell.isPlantingBed
+              ? getCellCaption(cell, base)
+              : `${getZoneSpec(cell.zone).label} · ${getCellCaption(cell, base)}`}
           </Text>
         </Billboard>
       )}

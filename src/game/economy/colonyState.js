@@ -20,11 +20,17 @@ export const FARM_ZONES = Object.freeze({
 // 地块用途。旧实现用 LOCKED 状态锁死 4/6 的地块且只有一条解锁路径，
 // 三分之一的内容永远进不去。现在 26 格全部存在，靠「开垦」逐步展开。
 export const CELL_USES = Object.freeze({
-  CROP: 'crop',
   FACILITY: 'facility',
 });
 
-export const CROP_STATUS = Object.freeze({
+// 每个坑只有一块种植床，长一棵「超级土豆」。其余 25 格全部是设施位。
+// 空间博弈因此从「种哪几格」变成「怎么摆设施伺候这一棵」——
+// 种植床只有 3-5 个直接邻格，加热桩与遮蔽棚都只在相邻时生效，
+// 这几个位置的争夺就是布局的核心。
+export const PLANTING_BED_ID = 'floor-0-0';
+
+export const POTATO_STATUS = Object.freeze({
+  EMPTY: 'empty',
   GROWING: 'growing',
   READY: 'ready',
 });
@@ -112,29 +118,28 @@ export const FACILITY_SPECS = Object.freeze({
   }),
 });
 
-// 区位基准：坑底慢而多，坑缘快而险。
+// 区位基准。种植床固定在坑底，所以只有坑底这一档参与生长计算；
+// 坑壁与坑缘的差异改为体现在设施效率上（采冰器、光伏的区位加成）。
 const ZONE_SPECS = Object.freeze({
-  [FARM_ZONES.FLOOR]: Object.freeze({
-    label: '坑底',
-    maturitySols: 14,
-    baseYield: 7,
-    yieldSpread: 1,
-  }),
-  [FARM_ZONES.SHADOW]: Object.freeze({
-    label: '坑壁阴影',
-    maturitySols: 11,
-    baseYield: 5,
-    yieldSpread: 1,
-  }),
-  [FARM_ZONES.RIM]: Object.freeze({
-    label: '坑缘',
-    maturitySols: 8,
-    baseYield: 3,
-    yieldSpread: 1,
-  }),
+  [FARM_ZONES.FLOOR]: Object.freeze({ label: '坑底' }),
+  [FARM_ZONES.SHADOW]: Object.freeze({ label: '坑壁阴影' }),
+  [FARM_ZONES.RIM]: Object.freeze({ label: '坑缘' }),
 });
 
 export const getZoneSpec = (zone) => ZONE_SPECS[zone];
+
+// ─── 超级土豆 ─────────────────────────────────────────────────
+// 一个坑只长一棵，产量由「长到多大」决定而不是「种了几格」。
+// 成熟需要的养护量远大于单格作物：这棵树是整个基地的唯一产出口。
+export const POTATO_MATURITY_SOLS = 16;
+// 体积随养护质量增长，收获量 = 最终体积。基准 12，满养护可到 26。
+export const POTATO_BASE_YIELD = 12;
+export const POTATO_MAX_YIELD = 26;
+// 超级土豆的耗水远高于普通作物 —— 它是基地唯一的水槽大头，
+// 且必须压过一台采冰器（含邻接加成约 5.7/SOL），否则「建一台就
+// 解决水」的老毛病会原样回来。想养满它需要两台以上，或者用
+// 蓄水峰值扛过生长期。
+export const WATER_PER_POTATO = 6.5;
 
 // ─── 速率基准 ──────────────────────────────────────────────────
 // 旧版：反应堆 +2/SOL 无上限，一台采冰器 +3 水养 3 块地耗 3 水，
@@ -147,7 +152,6 @@ export const BASE_WATER_CAP = 60;
 // 但远不足以支撑扩张。没有它，开局第一批作物会在成熟前旱死，
 // 而那时的能量还买不起采冰器 —— 死局。
 export const BASE_WATER_RECLAIM = 1.6;
-export const WATER_PER_CROP_CELL = 1;
 // Stage 7 接入真实队伍后，这一项由 Σ getCrewOutput().rationDraw 取代。
 export const BASE_CREW_COUNT = 4;
 export const WATER_PER_CREW = 0.3;
@@ -252,20 +256,22 @@ export const createBaseState = (crater, id) => {
     environment,
     growthFactor: getEnvironmentGrowthFactor(environment),
     // 26 格全部存在。cleared=false 即待开垦，不是永久锁死。
-    // 初始开垦 4 格：坑底 3 格种植 + 坑壁 1 格。开局的必修课是
-    // 「先建采冰器」，它会占掉坑壁那格，剩下 3 格农田恰好够
-    // 在首个合约截止前攒出交付量（含产量抖动的最差情况）。
+    // 其中 PLANTING_BED_ID 那一格是种植床（长唯一那棵超级土豆），
+    // 其余 25 格全是设施位。初始开垦种植床及其一个邻格 + 一个坑壁格：
+    // 开局的必修课是「先建采冰器」，坑壁格就是给它准备的。
     cells: createCellLattice(seed).map((cell) => ({
       id: cell.id,
       zone: cell.zone,
       ring: cell.ring,
-      cleared: cell.ring === 0
-        || cell.id === 'floor-1-0'
+      isPlantingBed: cell.id === PLANTING_BED_ID,
+      cleared: cell.id === PLANTING_BED_ID
+        || cell.id === 'floor-0-1'
         || cell.id === 'shadow-2-0',
       use: null,
-      crop: null,
       facility: null,
     })),
+    // 唯一的那棵超级土豆。null = 种植床空着。
+    potato: null,
     stores: { water: 30, energy: 22, tubers: 0, seedStock: 4 },
     // 水与能量都有上限：无上限的资源在第一次建造之后就不再是约束。
     // 水的上限靠储水罐（暂未开放）与蓄电组之外的手段抬高，

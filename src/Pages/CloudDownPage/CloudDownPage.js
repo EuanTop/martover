@@ -11,7 +11,7 @@ import TypeShuffleText from '../../Components/TypeShuffle/TypeShuffle';
 import Button from '../../Components/common/Button/Button';
 import GameHUD from '../../game/ui/GameHUD';
 import ColonyHUD from '../../game/ui/ColonyHUD';
-import { CROP_STATUS, TOOL_MODES } from '../../game/economy/colonyState';
+import { POTATO_STATUS, TOOL_MODES } from '../../game/economy/colonyState';
 import {
   TUBER_USES,
   VIEW_MODES,
@@ -289,11 +289,11 @@ const TimestampDisplay = ({ isDarkMode }) => {
     const cell = activeBase.cells.find((item) => item.id === cellId);
     if (!cell) return;
 
-    if (cell.crop?.status === CROP_STATUS.READY) {
+    if (cell.isPlantingBed && activeBase.potato?.status === POTATO_STATUS.READY) {
       onColonyCellAction(cellId, TOOL_MODES.HARVEST);
     } else if (!cell.cleared) {
       onColonyCellAction(cellId, TOOL_MODES.CLEAR);
-    } else if (!cell.use) {
+    } else if (cell.isPlantingBed && !activeBase.potato) {
       onColonyCellAction(cellId, TOOL_MODES.PLANT);
     }
   };

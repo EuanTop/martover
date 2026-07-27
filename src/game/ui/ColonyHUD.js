@@ -16,13 +16,14 @@ import {
   canApplyTool,
   getColonyAlerts,
   getEnergyCap,
+  getPotatoYield,
   getWaterDrain,
   getWaterIncome,
 } from '../economy/colonyEconomy';
 import {
   CLEAR_COST,
   COLONY_OUTCOMES,
-  CROP_STATUS,
+  POTATO_STATUS,
   FACILITY_SPECS,
   LOSS_REASONS,
   TOOL_FACILITY,
@@ -177,9 +178,7 @@ const ColonyHUD = ({
 
   const alerts = getColonyAlerts(colony);
   const latestLog = colony.log.at(-1);
-  const readyCount = base.cells.filter(
-    (cell) => cell.crop?.status === CROP_STATUS.READY
-  ).length;
+  const potatoReady = base.potato?.status === POTATO_STATUS.READY;
   const activeDefinition = ALL_TOOLS.find(
     (definition) => definition.tool === selectedTool
   );
@@ -221,6 +220,26 @@ const ColonyHUD = ({
         <div className={styles.resourceCell}>
           <span>种薯</span>
           <strong>{base.stores.seedStock}</strong>
+        </div>
+
+        {/* 超级土豆是全坑唯一的产出口，它的状态就是这局的进度条。
+            体积（= 收获量）由养护质量决定，所以两者必须同时可见。 */}
+        <div className={styles.potatoCell}>
+          <span>超级土豆</span>
+          {base.potato ? (
+            <>
+              <strong>
+                {potatoReady ? '可收获' : `${Math.round(base.potato.growth)}%`}
+              </strong>
+              <div className={styles.potatoBars}>
+                <i style={{ width: `${base.potato.growth}%` }} />
+                <b style={{ width: `${base.potato.quality * 100}%` }} />
+              </div>
+              <small>预计 {getPotatoYield(base)} 颗 · 养护 {Math.round(base.potato.quality * 100)}%</small>
+            </>
+          ) : (
+            <strong className={styles.potatoEmpty}>种植床空着</strong>
+          )}
         </div>
         {alerts.length > 0 && (
           <div className={styles.alertStrip}>
@@ -303,8 +322,8 @@ const ColonyHUD = ({
             key={definition.tool}
             definition={definition}
             selected={selectedTool === definition.tool}
-            hint={definition.tool === TOOL_MODES.HARVEST && readyCount > 0
-              ? `${readyCount} 格待收`
+            hint={definition.tool === TOOL_MODES.HARVEST && potatoReady
+              ? '超级土豆可收'
               : definition.hint}
             onSelect={handleSelect}
           />

@@ -16,7 +16,8 @@ import {
 } from '../simulation/breedingSimulation';
 import { getDecisionPoints } from '../economy/colonyEconomy';
 import {
-  CROP_STATUS,
+  PLANTING_BED_ID,
+  POTATO_STATUS,
   SKIP_MAX_SOLS,
   SPEED_STEPS,
   TOOL_MODES,
@@ -71,7 +72,7 @@ describe('gameSessionReducer', () => {
     expect(state.colony.bases['base-01'].cells).toHaveLength(26);
   });
 
-  it('advances the colony clock and executes cell tools', () => {
+  it('advances the colony clock and plants the single super potato', () => {
     let state = reduce(
       initialGameSessionState,
       GAME_SESSION_ACTIONS.SELECT_CRATER,
@@ -79,13 +80,13 @@ describe('gameSessionReducer', () => {
     );
     state = reduce(state, GAME_SESSION_ACTIONS.BEGIN_BREEDING);
     state = reduce(state, GAME_SESSION_ACTIONS.COLONY_CELL_ACTION, {
-      cellId: 'floor-0-0',
+      cellId: PLANTING_BED_ID,
       tool: TOOL_MODES.PLANT,
     });
 
-    const planted = state.colony.bases['base-01'].cells
-      .find((cell) => cell.id === 'floor-0-0');
-    expect(planted.crop.status).toBe(CROP_STATUS.GROWING);
+    // 一个坑只有一棵超级土豆，长在唯一的种植床上。
+    expect(state.colony.bases['base-01'].potato.status)
+      .toBe(POTATO_STATUS.GROWING);
 
     const solBefore = state.colony.sol;
     state = reduce(state, GAME_SESSION_ACTIONS.TICK);

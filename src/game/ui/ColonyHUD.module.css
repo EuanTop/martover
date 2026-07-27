@@ -61,6 +61,61 @@
   color: #ffe3d1;
 }
 
+/* 超级土豆格：全坑唯一的产出口，进度 + 养护质量同屏。
+   养护决定体积、体积决定收获量，两条必须一起看。 */
+.potatoCell {
+  min-width: 148px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  padding: 2px 10px;
+  border-left: 1px solid rgba(86, 41, 19, 0.5);
+}
+
+.potatoCell > span {
+  font-size: 11px;
+}
+
+.potatoCell > strong {
+  font-size: 15px;
+  line-height: 1.1;
+}
+
+.potatoEmpty {
+  color: #7c1d08;
+}
+
+.potatoCell small {
+  font-size: 10px;
+  opacity: 0.75;
+}
+
+/* 两条叠放的细条：上为生长进度，下为养护质量。 */
+.potatoBars {
+  position: relative;
+  height: 7px;
+  margin: 1px 0;
+  background: rgba(86, 41, 19, 0.24);
+}
+
+.potatoBars i,
+.potatoBars b {
+  position: absolute;
+  left: 0;
+  height: 3px;
+}
+
+.potatoBars i {
+  top: 0;
+  background: var(--ink);
+}
+
+.potatoBars b {
+  bottom: 0;
+  background: #7fa257;
+}
+
 .alertStrip {
   display: flex;
   align-items: center;
