@@ -57,11 +57,12 @@ const AppRoutes = () => {
     recoverFromFailure,
     preservedSamples,
     outcome,
-    farm,
-    farmPlotAction,
-    farmConvertSeeds,
-    farmDeliverContract,
-    farmRestart,
+    colony,
+    activeBase,
+    colonyCellAction,
+    colonyConvertSeeds,
+    colonyDeliverContract,
+    colonyRestart,
   } = useGameSession();
 
   // 显示加载状态
@@ -106,11 +107,12 @@ const AppRoutes = () => {
                 onRecover={recoverFromFailure}
                 preservedSamples={preservedSamples}
                 outcome={outcome}
-                farm={farm}
-                onFarmPlotAction={farmPlotAction}
-                onFarmConvertSeeds={farmConvertSeeds}
-                onFarmDeliverContract={farmDeliverContract}
-                onFarmRestart={farmRestart}
+                colony={colony}
+                activeBase={activeBase}
+                onColonyCellAction={colonyCellAction}
+                onColonyConvertSeeds={colonyConvertSeeds}
+                onColonyDeliverContract={colonyDeliverContract}
+                onColonyRestart={colonyRestart}
                 craterData={craterData?.available || []}
                 appReady={appReady}
               />

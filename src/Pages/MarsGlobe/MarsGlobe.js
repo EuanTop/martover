@@ -5,7 +5,7 @@ import { EffectComposer, SMAA } from '@react-three/postprocessing';
 import * as THREE from 'three';
 import  { useCursorStore } from '../../store'
 import CraterCultivationScene from '../../game/world/CraterCultivationScene';
-import FarmScene from '../../game/world/FarmScene';
+import ColonyScene from '../../game/world/ColonyScene';
 import CraterViewEffects from '../../game/world/CraterViewEffects';
 import WorldCameraRig from '../../game/world/WorldCameraRig';
 import { calculateCraterPosition } from '../../game/world/worldCoordinates';
@@ -398,9 +398,10 @@ const MarsGlobe = ({
   hideMarsModel = false,
   viewMode = VIEW_MODES.PLANET,
   simulation,
-  farm,
-  selectedFarmTool,
-  onFarmPlotClick,
+  colony,
+  activeBase,
+  selectedColonyTool,
+  onColonyCellClick,
   selectedTuberUse,
   selectedIntervention,
   onPlantInZone,
@@ -489,12 +490,13 @@ const MarsGlobe = ({
           && (
             viewMode === VIEW_MODES.CRATER
             || viewMode === VIEW_MODES.HUMAN
-          ) && (farm ? (
-            <FarmScene
+          ) && (colony && activeBase ? (
+            <ColonyScene
               crater={selectedCrater}
-              farm={farm}
-              selectedTool={selectedFarmTool}
-              onPlotAction={onFarmPlotClick}
+              colony={colony}
+              base={activeBase}
+              selectedTool={selectedColonyTool}
+              onCellAction={onColonyCellClick}
             />
           ) : simulation && (
             <CraterCultivationScene

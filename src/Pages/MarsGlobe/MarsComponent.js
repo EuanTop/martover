@@ -12,9 +12,10 @@ const MarsComponent = ({
   hideMarsModel = false,
   viewMode,
   simulation,
-  farm,
-  selectedFarmTool,
-  onFarmPlotClick,
+  colony,
+  activeBase,
+  selectedColonyTool,
+  onColonyCellClick,
   selectedTuberUse,
   selectedIntervention,
   onPlantInZone,
@@ -187,9 +188,10 @@ const MarsComponent = ({
         hideMarsModel={hideMarsModel}
         viewMode={viewMode}
         simulation={simulation}
-        farm={farm}
-        selectedFarmTool={selectedFarmTool}
-        onFarmPlotClick={onFarmPlotClick}
+        colony={colony}
+        activeBase={activeBase}
+        selectedColonyTool={selectedColonyTool}
+        onColonyCellClick={onColonyCellClick}
         selectedTuberUse={selectedTuberUse}
         selectedIntervention={selectedIntervention}
         onPlantInZone={onPlantInZone}

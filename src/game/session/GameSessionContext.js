@@ -12,6 +12,7 @@ import {
   initialGameSessionState,
 } from './gameSessionReducer';
 import { getGameProgressStep } from './gamePhases';
+import { getActiveBase } from '../economy/colonyState';
 import {
   BREEDING_STAGES,
   GENERATION_LENGTH_SOLS,
@@ -25,13 +26,13 @@ export const GameSessionProvider = ({ children }) => {
 
   useEffect(() => {
     // 经营模式：只要基地存活，SOL 时钟连续流动（策划 §19.5）。
-    const farmRunning = state.farm && !state.farm.outcome;
+    const colonyRunning = state.colony && !state.colony.outcome;
     const breedingRunning = (
       state.simulation?.stage === BREEDING_STAGES.GROWING
       && state.simulation.sol < GENERATION_LENGTH_SOLS
     );
 
-    if (!farmRunning && !breedingRunning) return undefined;
+    if (!colonyRunning && !breedingRunning) return undefined;
 
     const timer = window.setInterval(() => {
       dispatch({ type: GAME_SESSION_ACTIONS.TICK });
@@ -39,8 +40,8 @@ export const GameSessionProvider = ({ children }) => {
 
     return () => window.clearInterval(timer);
   }, [
-    state.farm?.outcome,
-    Boolean(state.farm),
+    state.colony?.outcome,
+    Boolean(state.colony),
     state.simulation?.stage,
     state.simulation?.sol,
   ]);
@@ -88,26 +89,29 @@ export const GameSessionProvider = ({ children }) => {
     dispatch({ type: GAME_SESSION_ACTIONS.RECOVER_FROM_FAILURE });
   }, []);
 
-  const farmPlotAction = useCallback((plotId, tool) => {
+  const colonyCellAction = useCallback((cellId, tool) => {
     dispatch({
-      type: GAME_SESSION_ACTIONS.FARM_PLOT_ACTION,
-      payload: { plotId, tool },
+      type: GAME_SESSION_ACTIONS.COLONY_CELL_ACTION,
+      payload: { cellId, tool },
     });
   }, []);
 
-  const farmConvertSeeds = useCallback((count = 1) => {
-    dispatch({ type: GAME_SESSION_ACTIONS.FARM_CONVERT_SEEDS, payload: count });
+  const colonyConvertSeeds = useCallback((count = 1) => {
+    dispatch({
+      type: GAME_SESSION_ACTIONS.COLONY_CONVERT_SEEDS,
+      payload: count,
+    });
   }, []);
 
-  const farmDeliverContract = useCallback((contractId) => {
+  const colonyDeliverContract = useCallback((contractId) => {
     dispatch({
-      type: GAME_SESSION_ACTIONS.FARM_DELIVER_CONTRACT,
+      type: GAME_SESSION_ACTIONS.COLONY_DELIVER_CONTRACT,
       payload: contractId,
     });
   }, []);
 
-  const farmRestart = useCallback(() => {
-    dispatch({ type: GAME_SESSION_ACTIONS.FARM_RESTART });
+  const colonyRestart = useCallback(() => {
+    dispatch({ type: GAME_SESSION_ACTIONS.COLONY_RESTART });
   }, []);
 
   const resetSession = useCallback(() => {
@@ -127,10 +131,10 @@ export const GameSessionProvider = ({ children }) => {
     feedHuman,
     startNextGeneration,
     recoverFromFailure,
-    farmPlotAction,
-    farmConvertSeeds,
-    farmDeliverContract,
-    farmRestart,
+    colonyCellAction,
+    colonyConvertSeeds,
+    colonyDeliverContract,
+    colonyRestart,
     resetSession,
   }), [
     selectCrater,
@@ -143,15 +147,18 @@ export const GameSessionProvider = ({ children }) => {
     feedHuman,
     startNextGeneration,
     recoverFromFailure,
-    farmPlotAction,
-    farmConvertSeeds,
-    farmDeliverContract,
-    farmRestart,
+    colonyCellAction,
+    colonyConvertSeeds,
+    colonyDeliverContract,
+    colonyRestart,
     resetSession,
   ]);
 
   const value = useMemo(() => ({
     ...state,
+    // 派生 activeBase，让 3D 与 HUD 层继续拿到一个扁平对象；
+    // Phase 2 接入多基地时消费方无需改动。
+    activeBase: state.colony ? getActiveBase(state.colony) : null,
     progressStep: getGameProgressStep(state.phase),
     ...actions,
   }), [state, actions]);

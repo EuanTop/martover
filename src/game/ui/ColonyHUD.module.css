@@ -174,6 +174,99 @@
   text-decoration: line-through;
 }
 
+/* 预测面板：左上，净速率与「还能撑几个 SOL」。
+   经营游戏的核心可读性 —— 玩家必须能规划而不是只能试错。 */
+.forecast {
+  top: 86px;
+  left: 18px;
+  width: 210px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  background: var(--panel);
+  border: 1px solid var(--ink);
+  backdrop-filter: blur(12px);
+}
+
+.rateRow {
+  display: grid;
+  grid-template-columns: 30px 1fr 42px;
+  grid-template-areas: 'label stock net' 'label hint hint';
+  align-items: baseline;
+  gap: 0 6px;
+  padding: 3px 0;
+}
+
+.rateRow + .rateRow {
+  border-top: 1px solid rgba(86, 41, 19, 0.28);
+}
+
+.rateRow span {
+  grid-area: label;
+  font-size: 11px;
+}
+
+.rateRow b {
+  grid-area: stock;
+  font-family: monospace;
+  font-size: 14px;
+}
+
+.rateRow i {
+  grid-area: net;
+  font-family: monospace;
+  font-size: 13px;
+  font-style: normal;
+  text-align: right;
+}
+
+.rateRow small {
+  grid-area: hint;
+  font-size: 10px;
+  opacity: 0.72;
+}
+
+.rateCritical {
+  color: #7c1d08;
+  font-weight: 600;
+}
+
+.rateCritical small {
+  opacity: 1;
+}
+
+/* 建造子面板：向上弹出。底部梯位是手调的，四层互不重叠：
+   toolbar 22 → toolHint 100 → logLine 140 → buildPalette 180。 */
+.buildPalette {
+  left: 50%;
+  bottom: 180px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  max-width: min(760px, 94vw);
+  padding: 10px 12px;
+  background: var(--panel);
+  border: 1px solid var(--ink);
+  backdrop-filter: blur(12px);
+}
+
+.buildPalette .toolButton {
+  min-width: 132px;
+  max-width: 168px;
+}
+
+.contractFailed {
+  opacity: 0.6;
+  color: #7c1d08;
+}
+
+.contractFailed header strong {
+  text-decoration: line-through;
+}
+
 /* 底部工具栏 */
 .toolbar {
   left: 50%;
@@ -244,7 +337,7 @@
 /* 日志行 */
 .logLine {
   left: 50%;
-  bottom: 108px;
+  bottom: 140px;
   transform: translateX(-50%);
   max-width: min(620px, 90vw);
   padding: 6px 14px;
@@ -259,7 +352,7 @@
 /* 工具提示条：选中工具后告诉玩家下一步点哪里 */
 .toolHint {
   left: 50%;
-  bottom: 140px;
+  bottom: 100px;
   transform: translateX(-50%);
   max-width: min(640px, 90vw);
   padding: 7px 16px;
@@ -316,9 +409,16 @@
 @media (max-width: 900px) {
   .contracts {
     top: auto;
-    bottom: 118px;
+    bottom: 188px;
     right: 12px;
     width: 200px;
+  }
+
+  .forecast {
+    top: auto;
+    bottom: 188px;
+    left: 12px;
+    width: 176px;
   }
 
   .topBar {
@@ -327,8 +427,25 @@
   }
 }
 
+/* GameHUD 有这条全局焦点环，FarmHUD 漏掉了。工具栏与建造面板
+   现在有十几个按钮，键盘导航必须能看见焦点在哪。 */
+.hud :is(button, [tabindex]):focus-visible {
+  outline: 2px solid #7a2d10;
+  outline-offset: 2px;
+}
+
+.hud button {
+  min-height: 40px;
+  border-radius: 0;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .alertStorm {
-    animation: none;
+  /* FarmHUD 只屏蔽了 .alertStorm，新增的面板过渡会继续动。
+     按 GameHUD 的做法整体屏蔽。 */
+  .hud,
+  .hud * {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
   }
 }

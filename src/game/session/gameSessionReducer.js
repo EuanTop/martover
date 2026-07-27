@@ -19,16 +19,20 @@ import {
   isHumanAlive,
 } from '../human/humanEngine';
 import {
-  advanceFarmSol,
+  advanceColonySol,
   buildFacility,
+  clearCell,
   convertTubersToSeeds,
-  createFarmState,
   deliverContract,
-  FACILITY_TYPES,
-  harvestPlot,
-  plantPlot,
+  demolishCell,
+  harvestCell,
+  plantCell,
+} from '../economy/colonyEconomy';
+import {
+  createColonyState,
+  TOOL_FACILITY,
   TOOL_MODES,
-} from '../economy/farmEconomy';
+} from '../economy/colonyState';
 
 export const GAME_SESSION_ACTIONS = Object.freeze({
   SELECT_CRATER: 'game-session/select-crater',
@@ -42,13 +46,12 @@ export const GAME_SESSION_ACTIONS = Object.freeze({
   FEED_HUMAN: 'game-session/feed-human',
   START_NEXT_GENERATION: 'game-session/start-next-generation',
   RECOVER_FROM_FAILURE: 'game-session/recover-from-failure',
-  FARM_PLOT_ACTION: 'game-session/farm-plot-action',
-  FARM_CONVERT_SEEDS: 'game-session/farm-convert-seeds',
-  FARM_DELIVER_CONTRACT: 'game-session/farm-deliver-contract',
-  FARM_RESTART: 'game-session/farm-restart',
+  COLONY_CELL_ACTION: 'game-session/colony-cell-action',
+  COLONY_CONVERT_SEEDS: 'game-session/colony-convert-seeds',
+  COLONY_DELIVER_CONTRACT: 'game-session/colony-deliver-contract',
+  COLONY_RESTART: 'game-session/colony-restart',
   RESET: 'game-session/reset',
 });
-
 export const RUN_OUTCOMES = Object.freeze({
   ACTIVE: 'active',
   HUMAN_LOST: 'human-lost',
@@ -61,7 +64,7 @@ export const initialGameSessionState = Object.freeze({
   selectedCrater: null,
   generation: 1,
   simulation: null,
-  farm: null,
+  colony: null,
   lineage: [],
   human: createHumanState(),
   parentSeed: null,
@@ -98,7 +101,7 @@ export const gameSessionReducer = (state, action) => {
         phase: GAME_PHASES.POTATO_BREEDING,
         viewMode: VIEW_MODES.CRATER,
         simulation: null,
-        farm: createFarmState(state.selectedCrater),
+        colony: createColonyState(state.selectedCrater),
       };
 
     case GAME_SESSION_ACTIONS.PLANT_IN_ZONE:
@@ -110,8 +113,8 @@ export const gameSessionReducer = (state, action) => {
       };
 
     case GAME_SESSION_ACTIONS.TICK:
-      if (state.farm) {
-        return { ...state, farm: advanceFarmSol(state.farm) };
+      if (state.colony) {
+        return { ...state, colony: advanceColonySol(state.colony) };
       }
       if (!state.simulation) return state;
 
@@ -120,51 +123,53 @@ export const gameSessionReducer = (state, action) => {
         simulation: advanceBreedingSimulation(state.simulation),
       };
 
-    case GAME_SESSION_ACTIONS.FARM_PLOT_ACTION:
-      if (!state.farm) return state;
+    case GAME_SESSION_ACTIONS.COLONY_CELL_ACTION:
+      if (!state.colony) return state;
 
       {
-        const { plotId, tool } = action.payload;
+        const { cellId, tool } = action.payload;
+        const facilityType = TOOL_FACILITY[tool];
         const toolHandlers = {
-          [TOOL_MODES.PLANT]: () => plantPlot(state.farm, plotId),
-          [TOOL_MODES.HARVEST]: () => harvestPlot(state.farm, plotId),
-          [TOOL_MODES.BUILD_HARVESTER]: () => buildFacility(
-            state.farm, plotId, FACILITY_TYPES.HARVESTER
-          ),
-          [TOOL_MODES.BUILD_HEATER]: () => buildFacility(
-            state.farm, plotId, FACILITY_TYPES.HEATER
-          ),
-          [TOOL_MODES.BUILD_SHIELD]: () => buildFacility(
-            state.farm, plotId, FACILITY_TYPES.SHIELD
-          ),
+          [TOOL_MODES.CLEAR]: () => clearCell(state.colony, cellId),
+          [TOOL_MODES.PLANT]: () => plantCell(state.colony, cellId),
+          [TOOL_MODES.HARVEST]: () => harvestCell(state.colony, cellId),
+          [TOOL_MODES.DEMOLISH]: () => demolishCell(state.colony, cellId),
         };
-        const handler = toolHandlers[tool];
+        const handler = facilityType
+          ? () => buildFacility(state.colony, cellId, facilityType)
+          : toolHandlers[tool];
 
-        return handler ? { ...state, farm: handler() } : state;
+        if (!handler) return state;
+
+        const colony = handler();
+
+        // 操作被守卫拒绝时返回同一引用，此处一并保持 state 引用不变，
+        // 让「这次点击没生效」在 React 层也不触发重渲染。
+        return colony === state.colony ? state : { ...state, colony };
       }
 
-    case GAME_SESSION_ACTIONS.FARM_CONVERT_SEEDS:
-      if (!state.farm) return state;
+    case GAME_SESSION_ACTIONS.COLONY_CONVERT_SEEDS:
+      if (!state.colony) return state;
+
+      {
+        const colony = convertTubersToSeeds(state.colony, action.payload || 1);
+        return colony === state.colony ? state : { ...state, colony };
+      }
+
+    case GAME_SESSION_ACTIONS.COLONY_DELIVER_CONTRACT:
+      if (!state.colony) return state;
+
+      {
+        const colony = deliverContract(state.colony, action.payload);
+        return colony === state.colony ? state : { ...state, colony };
+      }
+
+    case GAME_SESSION_ACTIONS.COLONY_RESTART:
+      if (!state.colony || !state.selectedCrater) return state;
 
       return {
         ...state,
-        farm: convertTubersToSeeds(state.farm, action.payload || 1),
-      };
-
-    case GAME_SESSION_ACTIONS.FARM_DELIVER_CONTRACT:
-      if (!state.farm) return state;
-
-      return {
-        ...state,
-        farm: deliverContract(state.farm, action.payload),
-      };
-
-    case GAME_SESSION_ACTIONS.FARM_RESTART:
-      if (!state.farm || !state.selectedCrater) return state;
-
-      return {
-        ...state,
-        farm: createFarmState(state.selectedCrater),
+        colony: createColonyState(state.selectedCrater),
       };
 
     case GAME_SESSION_ACTIONS.APPLY_INTERVENTION:

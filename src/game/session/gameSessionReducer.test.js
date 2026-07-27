@@ -14,7 +14,7 @@ import {
   TUBER_USES,
   VIEW_MODES,
 } from '../simulation/breedingSimulation';
-import { PLOT_STATUS, TOOL_MODES } from '../economy/farmEconomy';
+import { CROP_STATUS, TOOL_MODES } from '../economy/colonyState';
 
 const crater = {
   id: '01-000001',
@@ -49,7 +49,7 @@ const startBreedingState = () => ({
 });
 
 describe('gameSessionReducer', () => {
-  it('enters farm mode with a live base when a crater is confirmed', () => {
+  it('enters colony mode with a live base when a crater is confirmed', () => {
     let state = reduce(
       initialGameSessionState,
       GAME_SESSION_ACTIONS.SELECT_CRATER,
@@ -58,30 +58,51 @@ describe('gameSessionReducer', () => {
     state = reduce(state, GAME_SESSION_ACTIONS.BEGIN_BREEDING);
 
     expect(state.viewMode).toBe(VIEW_MODES.CRATER);
-    expect(state.farm).not.toBeNull();
+    expect(state.colony).not.toBeNull();
     expect(state.simulation).toBeNull();
-    expect(state.farm.contracts).toHaveLength(2);
+    expect(state.colony.contracts).toHaveLength(3);
+    // 26 格全部存在，不再有永久锁死的地块。
+    expect(state.colony.bases['base-01'].cells).toHaveLength(26);
   });
 
-  it('advances the farm clock and executes plot tools', () => {
+  it('advances the colony clock and executes cell tools', () => {
     let state = reduce(
       initialGameSessionState,
       GAME_SESSION_ACTIONS.SELECT_CRATER,
       crater
     );
     state = reduce(state, GAME_SESSION_ACTIONS.BEGIN_BREEDING);
-    state = reduce(state, GAME_SESSION_ACTIONS.FARM_PLOT_ACTION, {
-      plotId: 'floor-a',
+    state = reduce(state, GAME_SESSION_ACTIONS.COLONY_CELL_ACTION, {
+      cellId: 'floor-0-0',
       tool: TOOL_MODES.PLANT,
     });
 
-    expect(state.farm.plots.find((plot) => plot.id === 'floor-a').status)
-      .toBe(PLOT_STATUS.GROWING);
+    const planted = state.colony.bases['base-01'].cells
+      .find((cell) => cell.id === 'floor-0-0');
+    expect(planted.crop.status).toBe(CROP_STATUS.GROWING);
 
-    const solBefore = state.farm.sol;
+    const solBefore = state.colony.sol;
     state = reduce(state, GAME_SESSION_ACTIONS.TICK);
 
-    expect(state.farm.sol).toBe(solBefore + 1);
+    expect(state.colony.sol).toBe(solBefore + 1);
+  });
+
+  it('keeps state identity when a cell tool is rejected', () => {
+    // 引用相等是「这次点击没生效」的信号，React 层因此不重渲染。
+    let state = reduce(
+      initialGameSessionState,
+      GAME_SESSION_ACTIONS.SELECT_CRATER,
+      crater
+    );
+    state = reduce(state, GAME_SESSION_ACTIONS.BEGIN_BREEDING);
+
+    // rim-4-0 未开垦，不能直接播种。
+    const rejected = reduce(state, GAME_SESSION_ACTIONS.COLONY_CELL_ACTION, {
+      cellId: 'rim-4-0',
+      tool: TOOL_MODES.PLANT,
+    });
+
+    expect(rejected).toBe(state);
   });
 
   it('runs one generation from planting to a persistent human response', () => {
@@ -126,7 +147,7 @@ describe('gameSessionReducer', () => {
 
     expect(selected.viewMode).toBe(VIEW_MODES.PLANET);
     expect(selected.simulation).toBeNull();
-    expect(selected.farm).toBeNull();
+    expect(selected.colony).toBeNull();
   });
 
   const runToAllocation = (assign) => {

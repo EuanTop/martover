@@ -10,8 +10,8 @@ import ProgressBar from '../../Components/ProgressBar';
 import TypeShuffleText from '../../Components/TypeShuffle/TypeShuffle';
 import Button from '../../Components/common/Button/Button';
 import GameHUD from '../../game/ui/GameHUD';
-import FarmHUD from '../../game/ui/FarmHUD';
-import { PLOT_STATUS, TOOL_MODES } from '../../game/economy/farmEconomy';
+import ColonyHUD from '../../game/ui/ColonyHUD';
+import { CROP_STATUS, TOOL_MODES } from '../../game/economy/colonyState';
 import {
   TUBER_USES,
   VIEW_MODES,
@@ -61,11 +61,12 @@ const CloudDownPage = ({
   onRecover,
   preservedSamples,
   outcome,
-  farm,
-  onFarmPlotAction,
-  onFarmConvertSeeds,
-  onFarmDeliverContract,
-  onFarmRestart,
+  colony,
+  activeBase,
+  onColonyCellAction,
+  onColonyConvertSeeds,
+  onColonyDeliverContract,
+  onColonyRestart,
   craterData,
   appReady
 }) => {
@@ -102,7 +103,7 @@ const CloudDownPage = ({
   const [hideMarsModel, setHideMarsModel] = useState(false);
   const [selectedTuberUse, setSelectedTuberUse] = useState(TUBER_USES.SEED);
   const [selectedIntervention, setSelectedIntervention] = useState(null);
-  const [selectedFarmTool, setSelectedFarmTool] = useState(null);
+  const [selectedColonyTool, setSelectedColonyTool] = useState(null);
 
   useEffect(() => {
     if (viewMode !== VIEW_MODES.CRATER || simulation?.stage !== 'growing') {
@@ -272,23 +273,25 @@ const TimestampDisplay = ({ isDarkMode }) => {
     setSelectedIntervention(null);
   };
 
-  // 地块点击：优先用当前选中的工具；未选工具时按地块状态取
-  // 最自然的动作（成熟→收获，空地→种植）。
-  const handleFarmPlotClick = (plotId) => {
-    if (!farm) return;
+  // 地块点击：优先用当前选中的工具；未选工具时按格子状态取
+  // 最自然的动作（成熟→收获，空地→种植，未开垦→开垦）。
+  const handleColonyCellClick = (cellId) => {
+    if (!activeBase) return;
 
-    if (selectedFarmTool) {
-      onFarmPlotAction(plotId, selectedFarmTool);
+    if (selectedColonyTool) {
+      onColonyCellAction(cellId, selectedColonyTool);
       return;
     }
 
-    const plot = farm.plots.find((item) => item.id === plotId);
-    if (!plot) return;
+    const cell = activeBase.cells.find((item) => item.id === cellId);
+    if (!cell) return;
 
-    if (plot.status === PLOT_STATUS.READY) {
-      onFarmPlotAction(plotId, TOOL_MODES.HARVEST);
-    } else if (plot.status === PLOT_STATUS.EMPTY && !plot.facility) {
-      onFarmPlotAction(plotId, TOOL_MODES.PLANT);
+    if (cell.crop?.status === CROP_STATUS.READY) {
+      onColonyCellAction(cellId, TOOL_MODES.HARVEST);
+    } else if (!cell.cleared) {
+      onColonyCellAction(cellId, TOOL_MODES.CLEAR);
+    } else if (!cell.use) {
+      onColonyCellAction(cellId, TOOL_MODES.PLANT);
     }
   };
 
@@ -384,9 +387,10 @@ const TimestampDisplay = ({ isDarkMode }) => {
                 hideMarsModel={hideMarsModel}
                 viewMode={viewMode}
                 simulation={simulation}
-                farm={farm}
-                selectedFarmTool={selectedFarmTool}
-                onFarmPlotClick={handleFarmPlotClick}
+                colony={colony}
+                activeBase={activeBase}
+                selectedColonyTool={selectedColonyTool}
+                onColonyCellClick={handleColonyCellClick}
                 selectedTuberUse={selectedTuberUse}
                 selectedIntervention={selectedIntervention}
                 onPlantInZone={onPlantInZone}
@@ -418,18 +422,19 @@ const TimestampDisplay = ({ isDarkMode }) => {
             />
           )}
           
-          {!showIntro && showMars && !isTransitioning && farm && (
-            <FarmHUD
-              farm={farm}
-              selectedTool={selectedFarmTool}
-              onSelectTool={setSelectedFarmTool}
-              onConvertSeeds={onFarmConvertSeeds}
-              onDeliverContract={onFarmDeliverContract}
-              onRestart={onFarmRestart}
+          {!showIntro && showMars && !isTransitioning && colony && (
+            <ColonyHUD
+              colony={colony}
+              base={activeBase}
+              selectedTool={selectedColonyTool}
+              onSelectTool={setSelectedColonyTool}
+              onConvertSeeds={onColonyConvertSeeds}
+              onDeliverContract={onColonyDeliverContract}
+              onRestart={onColonyRestart}
             />
           )}
 
-          {!showIntro && showMars && !isTransitioning && !farm && (
+          {!showIntro && showMars && !isTransitioning && !colony && (
             <GameHUD
               viewMode={viewMode}
               selectedCrater={selectedCrater}
