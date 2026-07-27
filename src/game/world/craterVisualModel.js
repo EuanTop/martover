@@ -1,32 +1,26 @@
 import * as THREE from 'three';
+import {
+  FLOOR_DEPTH,
+  PLAIN_OUTER,
+  TERRAIN_BANDS,
+  TERRAIN_RADIUS,
+  ZONE_BANDS,
+} from './terrainBands';
+
+// 尺度常量的定义已移到 terrainBands.js（不 import three）：
+// 经济层的地块网格需要分带常量，但不能因此被拖进 three。
+// 这里 re-export 保持既有导入路径全部有效。
+export {
+  FLOOR_DEPTH,
+  PLAIN_OUTER,
+  TERRAIN_BANDS,
+  TERRAIN_RADIUS,
+  ZONE_BANDS,
+};
 
 const MIN_CRATER_DIAMETER_KM = 1.8;
 const MAX_CRATER_DIAMETER_KM = 45;
 const MARS_WORLD_SCALE = 2;
-
-// 地形网格外沿，局部单位。这里是唯一定义，
-// CraterCultivationScene 从此处导入，避免两份常量互相漂移。
-export const TERRAIN_RADIUS = 0.92;
-
-// 周边平原外沿（归一化半径，坑体=1.0）。火星全球贴图在近景下
-// 每块地表只摊到约 30px，坑外必然是一团模糊 —— 相机能看到的
-// 近处地面必须全部由自建高细节网格覆盖，球面贴图只留作远景。
-export const PLAIN_OUTER = 1.8;
-
-// 地形分带边界（归一化半径 0..1）。种植区、干预标记与碎石
-// 全部引用同一组边界，因此「坑底」的植株真的落在坑底。
-export const TERRAIN_BANDS = Object.freeze({
-  floor: 0.34,
-  slope: 0.72,
-  rim: 0.86,
-});
-
-// 三个种植区各自的归一化半径区间，与上面的地形分带严格对齐。
-export const ZONE_BANDS = Object.freeze({
-  floor: { inner: 0.06, outer: 0.3 },
-  shadow: { inner: 0.4, outer: 0.68 },
-  rim: { inner: 0.74, outer: 0.84 },
-});
 
 // 真实直径 1.8-45 km 的比值是 25 倍。旧标定 lerp(0.032, 0.056)
 // 只有 1.75 倍，所有坑看起来一样大；同时最小的坑覆盖约 200 km 弧长。
@@ -53,9 +47,6 @@ export const getCraterDisplayScale = (crater) => {
 export const getCraterWorldRadius = (crater) => (
   getCraterDisplayScale(crater) * MARS_WORLD_SCALE * TERRAIN_RADIUS
 );
-
-// 坑底深度，局部单位。与 CraterCultivationScene 的地形一致。
-export const FLOOR_DEPTH = 0.14;
 
 // 坑体挂载半径。火星球体是闭合不透明的，任何低于球面 1.0 的几何
 // 都会被球面遮挡，所以坑体必须整体在球面之上：挂载点抬高
