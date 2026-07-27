@@ -616,6 +616,64 @@ export const canApplyTool = (colony, cellId, tool) => {
   }
 };
 
+// 决策点探测。自动暂停与「跳到下一节点」共用这一份判定 ——
+// 节奏因此由玩家的决策密度决定，而不是由时钟强制的等待决定。
+// urgency 3：不处理就会亏损或失败，自动暂停。
+// urgency 2：值得停下来看一眼，跳转会停在这里。
+// urgency 1：提示性质，不打断。
+export const getDecisionPoints = (colony) => {
+  if (!colony || colony.outcome) return [];
+
+  const base = getActiveBase(colony);
+  const points = [];
+  const water = base.stores.water;
+  const waterNet = (base.facilitiesIdle ? BASE_WATER_RECLAIM : getWaterIncome(base))
+    - getWaterDrain(base);
+
+  if (waterNet < -0.05 && water / -waterNet <= 3) {
+    points.push({ kind: 'water-critical', urgency: 3 });
+  }
+  if (base.facilitiesIdle) {
+    points.push({ kind: 'blackout', urgency: 3 });
+  }
+  if (
+    colony.sol === base.hazards.storm.announceSol
+    || (colony.sol > base.hazards.storm.announceSol
+      && colony.sol < base.hazards.storm.arriveSol
+      && colony.sol === base.hazards.storm.arriveSol - 1)
+  ) {
+    points.push({ kind: 'storm-warning', urgency: 3 });
+  }
+  // 绝产前兆：没有作物在长，且种薯也见底。
+  if (
+    !base.cells.some((cell) => cell.crop)
+    && base.stores.seedStock < 1
+  ) {
+    points.push({ kind: 'production-stalled', urgency: 3 });
+  }
+
+  if (base.cells.some((cell) => cell.crop?.status === CROP_STATUS.READY)) {
+    points.push({ kind: 'harvest-ready', urgency: 2 });
+  }
+  if (colony.contracts.some(
+    (contract) => contract.status === 'open'
+      && base.stores[contract.resource] >= contract.amount
+  )) {
+    points.push({ kind: 'contract-deliverable', urgency: 2 });
+  }
+  if (colony.contracts.some(
+    (contract) => contract.status === 'open'
+      && contract.deadlineSol - colony.sol === 5
+  )) {
+    points.push({ kind: 'deadline-near', urgency: 2 });
+  }
+  if (!base.cells.some((cell) => cell.crop)) {
+    points.push({ kind: 'idle-fields', urgency: 1 });
+  }
+
+  return points;
+};
+
 // HUD 告警。
 export const getColonyAlerts = (colony) => {
   if (!colony) return [];

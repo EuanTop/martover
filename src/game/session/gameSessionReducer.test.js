@@ -14,7 +14,13 @@ import {
   TUBER_USES,
   VIEW_MODES,
 } from '../simulation/breedingSimulation';
-import { CROP_STATUS, TOOL_MODES } from '../economy/colonyState';
+import { getDecisionPoints } from '../economy/colonyEconomy';
+import {
+  CROP_STATUS,
+  SKIP_MAX_SOLS,
+  SPEED_STEPS,
+  TOOL_MODES,
+} from '../economy/colonyState';
 
 const crater = {
   id: '01-000001',
@@ -138,8 +144,7 @@ describe('gameSessionReducer', () => {
     expect(state.human.lastResponse.sensation).toBeTruthy();
   });
 
-  it('keeps a selected crater from starting a run until confirmed', () => {
-    const selected = reduce(
+  it('keeps a selected crater from starting a run until confirmed', () => {    const selected = reduce(
       initialGameSessionState,
       GAME_SESSION_ACTIONS.SELECT_CRATER,
       crater
@@ -280,5 +285,127 @@ describe('gameSessionReducer', () => {
       selectedCrater: null,
       simulation: null,
     });
+  });
+});
+
+describe('colony clock', () => {
+  const startColony = () => {
+    let state = reduce(
+      initialGameSessionState,
+      GAME_SESSION_ACTIONS.SELECT_CRATER,
+      crater
+    );
+    return reduce(state, GAME_SESSION_ACTIONS.BEGIN_BREEDING);
+  };
+
+  it('starts running at 1x', () => {
+    const state = startColony();
+
+    expect(state.colony.clock).toMatchObject({ paused: false, speed: 1 });
+  });
+
+  it('clamps speed to the allowed steps and resumes on change', () => {
+    let state = startColony();
+    state = reduce(state, GAME_SESSION_ACTIONS.COLONY_TOGGLE_PAUSED);
+    expect(state.colony.clock.paused).toBe(true);
+
+    state = reduce(state, GAME_SESSION_ACTIONS.COLONY_SET_SPEED, 4);
+    expect(state.colony.clock.speed).toBe(4);
+    // 改倍速隐含「继续」，否则玩家点了 4x 却没反应。
+    expect(state.colony.clock.paused).toBe(false);
+
+    state = reduce(state, GAME_SESSION_ACTIONS.COLONY_SET_SPEED, 99);
+    expect(SPEED_STEPS).toContain(state.colony.clock.speed);
+  });
+
+  it('toggles pause both ways', () => {
+    let state = startColony();
+    state = reduce(state, GAME_SESSION_ACTIONS.COLONY_TOGGLE_PAUSED);
+    expect(state.colony.clock.paused).toBe(true);
+    state = reduce(state, GAME_SESSION_ACTIONS.COLONY_TOGGLE_PAUSED);
+    expect(state.colony.clock.paused).toBe(false);
+  });
+
+  it('skips forward and always lands paused', () => {
+    const before = startColony();
+    const after = reduce(before, GAME_SESSION_ACTIONS.COLONY_SKIP_TO_EVENT);
+
+    expect(after.colony.sol).toBeGreaterThan(before.colony.sol);
+    expect(after.colony.sol - before.colony.sol)
+      .toBeLessThanOrEqual(SKIP_MAX_SOLS);
+    // 跳转的意义是把控制权交回玩家 —— 落地必须是暂停态。
+    expect(after.colony.clock.paused).toBe(true);
+  });
+
+  it('stops skipping at the first decision point', () => {
+    let state = startColony();
+    // 种一格，跳转应当停在成熟那一刻而不是一路跑满 15 SOL。
+    state = reduce(state, GAME_SESSION_ACTIONS.COLONY_CELL_ACTION, {
+      cellId: 'floor-0-0',
+      tool: TOOL_MODES.PLANT,
+    });
+
+    let guard = 0;
+    while (
+      !getDecisionPoints(state.colony).some((p) => p.urgency >= 2)
+      && guard < 10
+    ) {
+      state = reduce(state, GAME_SESSION_ACTIONS.COLONY_SKIP_TO_EVENT);
+      guard += 1;
+    }
+
+    expect(getDecisionPoints(state.colony).some((p) => p.urgency >= 2))
+      .toBe(true);
+  });
+
+  it('never skips past the end of a run', () => {
+    const finished = {
+      ...startColony(),
+    };
+    finished.colony = { ...finished.colony, outcome: 'lost' };
+
+    expect(reduce(finished, GAME_SESSION_ACTIONS.COLONY_SKIP_TO_EVENT))
+      .toBe(finished);
+  });
+
+  it('auto-pauses on an urgent decision point, then re-arms once clear', () => {
+    // 自动暂停让节奏由决策密度决定，而不是靠玩家盯着时钟。
+    let state = startColony();
+    const patchStores = (s, stores) => ({
+      ...s,
+      colony: {
+        ...s.colony,
+        bases: {
+          ...s.colony.bases,
+          'base-01': {
+            ...s.colony.bases['base-01'],
+            stores: { ...s.colony.bases['base-01'].stores, ...stores },
+          },
+        },
+      },
+    });
+
+    // 没作物、没种薯但手上有块茎：可恢复，但需要玩家立刻决策。
+    state = patchStores(state, { seedStock: 0, tubers: 8 });
+    state = reduce(state, GAME_SESSION_ACTIONS.TICK);
+
+    expect(state.colony.outcome).toBeNull();
+    expect(state.colony.clock.paused).toBe(true);
+    expect(state.colony.clock.autoPauseArmed).toBe(false);
+
+    // 紧急状态未解除时不再反复暂停（否则每 SOL 都打断玩家）。
+    state = { ...state, colony: { ...state.colony, clock: { ...state.colony.clock, paused: false } } };
+    state = reduce(state, GAME_SESSION_ACTIONS.TICK);
+    expect(state.colony.clock.paused).toBe(false);
+
+    // 解除紧急（补上种薯并种下）后重新武装。
+    state = patchStores(state, { seedStock: 4 });
+    state = reduce(state, GAME_SESSION_ACTIONS.COLONY_CELL_ACTION, {
+      cellId: 'floor-0-0',
+      tool: TOOL_MODES.PLANT,
+    });
+    state = reduce(state, GAME_SESSION_ACTIONS.TICK);
+
+    expect(state.colony.clock.autoPauseArmed).toBe(true);
   });
 });

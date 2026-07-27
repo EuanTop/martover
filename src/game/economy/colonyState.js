@@ -171,6 +171,15 @@ export const COLD_SNAP_GROWTH_MULTIPLIER = 0.45;
 
 export const BLACKOUT_LOSS_SOLS = 8;
 
+// ─── 时钟 ─────────────────────────────────────────────────────
+// 节奏要求：玩家持续操作时一轮应在 15 分钟内走完。推论是等待必须
+// 可跳过，且节奏由玩家的决策密度门控 —— 所以时钟状态放在 reducer
+// 里（可测、可序列化），而不是组件的 useState。
+export const SOL_BASE_MS = 2400;
+export const SPEED_STEPS = Object.freeze([1, 2, 4]);
+// 单次「跳到下一节点」最多推进的 SOL 数：即使一路无事也要交还控制权。
+export const SKIP_MAX_SOLS = 15;
+
 const getCraterId = (crater) => crater?.id || crater?.CRATER_ID || 'unknown';
 
 // 环境 → 生长速率。旧版返回 0.78-1.05，坑底 14 SOL 成熟意味着好坑

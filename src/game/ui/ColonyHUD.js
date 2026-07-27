@@ -29,6 +29,7 @@ import {
   TOOL_MODES,
   TUBERS_PER_SEED,
 } from '../economy/colonyState';
+import ClockControls from './ClockControls';
 import styles from './ColonyHUD.module.css';
 
 // 直接动作与建造动作分开：建造有 5 种，平铺会把工具栏挤爆。
@@ -166,6 +167,9 @@ const ColonyHUD = ({
   onConvertSeeds,
   onDeliverContract,
   onRestart,
+  onToggleClock,
+  onSetClockSpeed,
+  onSkipToEvent,
 }) => {
   const [buildOpen, setBuildOpen] = useState(false);
 
@@ -199,6 +203,13 @@ const ColonyHUD = ({
   return (
     <>
       <div className={`${styles.hud} ${styles.topBar}`}>
+        <ClockControls
+          clock={colony.clock}
+          disabled={Boolean(colony.outcome)}
+          onToggle={onToggleClock}
+          onSetSpeed={onSetClockSpeed}
+          onSkip={onSkipToEvent}
+        />
         <div className={styles.solCell}>
           <span>基地时钟</span>
           <strong>SOL {String(colony.sol).padStart(2, '0')}</strong>

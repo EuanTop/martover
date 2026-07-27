@@ -25,11 +25,14 @@ import {
   convertTubersToSeeds,
   deliverContract,
   demolishCell,
+  getDecisionPoints,
   harvestCell,
   plantCell,
 } from '../economy/colonyEconomy';
 import {
   createColonyState,
+  SKIP_MAX_SOLS,
+  SPEED_STEPS,
   TOOL_FACILITY,
   TOOL_MODES,
 } from '../economy/colonyState';
@@ -50,6 +53,9 @@ export const GAME_SESSION_ACTIONS = Object.freeze({
   COLONY_CONVERT_SEEDS: 'game-session/colony-convert-seeds',
   COLONY_DELIVER_CONTRACT: 'game-session/colony-deliver-contract',
   COLONY_RESTART: 'game-session/colony-restart',
+  COLONY_SET_SPEED: 'game-session/colony-set-speed',
+  COLONY_TOGGLE_PAUSED: 'game-session/colony-toggle-paused',
+  COLONY_SKIP_TO_EVENT: 'game-session/colony-skip-to-event',
   RESET: 'game-session/reset',
 });
 export const RUN_OUTCOMES = Object.freeze({
@@ -114,7 +120,33 @@ export const gameSessionReducer = (state, action) => {
 
     case GAME_SESSION_ACTIONS.TICK:
       if (state.colony) {
-        return { ...state, colony: advanceColonySol(state.colony) };
+        const colony = advanceColonySol(state.colony);
+
+        // 自动暂停：紧急决策点出现时停表，让玩家不必盯着时钟。
+        // autoPauseArmed 在紧急集合清空后重新武装，避免持续状态
+        // （比如长期缺水）每个 SOL 都把游戏暂停一次。
+        const urgent = getDecisionPoints(colony).some((p) => p.urgency >= 3);
+
+        if (!urgent) {
+          return {
+            ...state,
+            colony: colony.clock.autoPauseArmed
+              ? colony
+              : { ...colony, clock: { ...colony.clock, autoPauseArmed: true } },
+          };
+        }
+
+        return {
+          ...state,
+          colony: colony.clock.autoPauseArmed
+            ? {
+              ...colony,
+              clock: {
+                ...colony.clock, paused: true, speed: 1, autoPauseArmed: false,
+              },
+            }
+            : colony,
+        };
       }
       if (!state.simulation) return state;
 
@@ -122,6 +154,57 @@ export const gameSessionReducer = (state, action) => {
         ...state,
         simulation: advanceBreedingSimulation(state.simulation),
       };
+
+    case GAME_SESSION_ACTIONS.COLONY_SET_SPEED:
+      if (!state.colony) return state;
+
+      {
+        const speed = SPEED_STEPS.includes(action.payload)
+          ? action.payload
+          : SPEED_STEPS[0];
+
+        return {
+          ...state,
+          colony: {
+            ...state.colony,
+            clock: { ...state.colony.clock, speed, paused: false },
+          },
+        };
+      }
+
+    case GAME_SESSION_ACTIONS.COLONY_TOGGLE_PAUSED:
+      if (!state.colony) return state;
+
+      return {
+        ...state,
+        colony: {
+          ...state.colony,
+          clock: {
+            ...state.colony.clock,
+            paused: !state.colony.clock.paused,
+          },
+        },
+      };
+
+    // 跳到下一个决策点。纯 reducer 循环，不是加快计时器 ——
+    // 等待可以跳过，但决策不会被跳过。
+    case GAME_SESSION_ACTIONS.COLONY_SKIP_TO_EVENT:
+      if (!state.colony || state.colony.outcome) return state;
+
+      {
+        let colony = state.colony;
+
+        for (let step = 0; step < SKIP_MAX_SOLS; step += 1) {
+          colony = advanceColonySol(colony);
+          if (colony.outcome) break;
+          if (getDecisionPoints(colony).some((p) => p.urgency >= 2)) break;
+        }
+
+        return {
+          ...state,
+          colony: { ...colony, clock: { ...colony.clock, paused: true } },
+        };
+      }
 
     case GAME_SESSION_ACTIONS.COLONY_CELL_ACTION:
       if (!state.colony) return state;

@@ -67,6 +67,9 @@ const CloudDownPage = ({
   onColonyConvertSeeds,
   onColonyDeliverContract,
   onColonyRestart,
+  onSetClockSpeed,
+  onToggleClock,
+  onSkipToEvent,
   craterData,
   appReady
 }) => {
@@ -431,6 +434,9 @@ const TimestampDisplay = ({ isDarkMode }) => {
               onConvertSeeds={onColonyConvertSeeds}
               onDeliverContract={onColonyDeliverContract}
               onRestart={onColonyRestart}
+              onToggleClock={onToggleClock}
+              onSetClockSpeed={onSetClockSpeed}
+              onSkipToEvent={onSkipToEvent}
             />
           )}
 
