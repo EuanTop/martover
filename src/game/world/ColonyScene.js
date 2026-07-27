@@ -21,7 +21,7 @@ import {
   getCraterDisplayScale,
   getCraterMountRadius,
 } from './craterVisualModel';
-import SuperPotato from './SuperPotato';
+import SuperPotato, { PLANT_LABEL_HEIGHT } from './SuperPotato';
 import { calculateCraterPosition } from './worldCoordinates';
 import { createCellLattice } from '../economy/baseLayout';
 import { canApplyTool } from '../economy/colonyEconomy';
@@ -284,22 +284,31 @@ const ColonyCell = ({
         <CoverageDisc radius={radius} color="#ff9d55" />
       )}
 
-      {/* 全坑唯一的那棵超级土豆。渲染预算全砸在它身上。 */}
+      {/* 全坑唯一的那棵超级土豆。按坑半径标定，不受格子大小约束 ——
+          它是坑内的视觉主体，设施模型只有它的几十分之一。 */}
       {cell.isPlantingBed && base.potato && (
         <SuperPotato
           growth={base.potato.growth}
           quality={base.potato.quality}
           seed={seed}
-          radius={radius}
         />
       )}
 
       {FacilityModel && <FacilityModel radius={radius} />}
 
       {showLabel && (
-        <Billboard position={[0, radius * 0.9 + 0.03, 0]}>
+        <Billboard
+          position={[
+            0,
+            // 种植床的标签要抬到植株之上，否则会被叶丛盖住。
+            cell.isPlantingBed && base.potato
+              ? PLANT_LABEL_HEIGHT
+              : radius * 0.9 + 0.03,
+            0,
+          ]}
+        >
           <Text
-            fontSize={LABEL_FONT_SIZE}
+            fontSize={cell.isPlantingBed ? LABEL_FONT_SIZE * 1.8 : LABEL_FONT_SIZE}
             color={cell.cleared ? '#fff4e8' : '#d8b294'}
             outlineColor="#3f1d0d"
             outlineWidth={0.002}
