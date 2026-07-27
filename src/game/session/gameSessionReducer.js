@@ -5,7 +5,6 @@ import {
   assignTuberUse,
   BREEDING_STAGES,
   canFeedHuman,
-  createBreedingSimulation,
   DEFAULT_RESOURCES,
   harvestBreedingSimulation,
   plantInZone,
@@ -19,6 +18,17 @@ import {
   createHumanState,
   isHumanAlive,
 } from '../human/humanEngine';
+import {
+  advanceFarmSol,
+  buildFacility,
+  convertTubersToSeeds,
+  createFarmState,
+  deliverContract,
+  FACILITY_TYPES,
+  harvestPlot,
+  plantPlot,
+  TOOL_MODES,
+} from '../economy/farmEconomy';
 
 export const GAME_SESSION_ACTIONS = Object.freeze({
   SELECT_CRATER: 'game-session/select-crater',
@@ -32,6 +42,10 @@ export const GAME_SESSION_ACTIONS = Object.freeze({
   FEED_HUMAN: 'game-session/feed-human',
   START_NEXT_GENERATION: 'game-session/start-next-generation',
   RECOVER_FROM_FAILURE: 'game-session/recover-from-failure',
+  FARM_PLOT_ACTION: 'game-session/farm-plot-action',
+  FARM_CONVERT_SEEDS: 'game-session/farm-convert-seeds',
+  FARM_DELIVER_CONTRACT: 'game-session/farm-deliver-contract',
+  FARM_RESTART: 'game-session/farm-restart',
   RESET: 'game-session/reset',
 });
 
@@ -47,6 +61,7 @@ export const initialGameSessionState = Object.freeze({
   selectedCrater: null,
   generation: 1,
   simulation: null,
+  farm: null,
   lineage: [],
   human: createHumanState(),
   parentSeed: null,
@@ -73,6 +88,8 @@ export const gameSessionReducer = (state, action) => {
         selectedCrater: null,
       };
 
+    // 2.0 经营转向：确认坑位后进入基地经营模式（策划 §19.5）。
+    // 育种模拟保留为待接回子系统，本入口不再创建它。
     case GAME_SESSION_ACTIONS.BEGIN_BREEDING:
       if (!state.selectedCrater) return state;
 
@@ -80,13 +97,8 @@ export const gameSessionReducer = (state, action) => {
         ...state,
         phase: GAME_PHASES.POTATO_BREEDING,
         viewMode: VIEW_MODES.CRATER,
-        simulation: createBreedingSimulation(
-          state.selectedCrater,
-          state.generation,
-          state.human,
-          state.parentSeed,
-          state.resources
-        ),
+        simulation: null,
+        farm: createFarmState(state.selectedCrater),
       };
 
     case GAME_SESSION_ACTIONS.PLANT_IN_ZONE:
@@ -98,11 +110,61 @@ export const gameSessionReducer = (state, action) => {
       };
 
     case GAME_SESSION_ACTIONS.TICK:
+      if (state.farm) {
+        return { ...state, farm: advanceFarmSol(state.farm) };
+      }
       if (!state.simulation) return state;
 
       return {
         ...state,
         simulation: advanceBreedingSimulation(state.simulation),
+      };
+
+    case GAME_SESSION_ACTIONS.FARM_PLOT_ACTION:
+      if (!state.farm) return state;
+
+      {
+        const { plotId, tool } = action.payload;
+        const toolHandlers = {
+          [TOOL_MODES.PLANT]: () => plantPlot(state.farm, plotId),
+          [TOOL_MODES.HARVEST]: () => harvestPlot(state.farm, plotId),
+          [TOOL_MODES.BUILD_HARVESTER]: () => buildFacility(
+            state.farm, plotId, FACILITY_TYPES.HARVESTER
+          ),
+          [TOOL_MODES.BUILD_HEATER]: () => buildFacility(
+            state.farm, plotId, FACILITY_TYPES.HEATER
+          ),
+          [TOOL_MODES.BUILD_SHIELD]: () => buildFacility(
+            state.farm, plotId, FACILITY_TYPES.SHIELD
+          ),
+        };
+        const handler = toolHandlers[tool];
+
+        return handler ? { ...state, farm: handler() } : state;
+      }
+
+    case GAME_SESSION_ACTIONS.FARM_CONVERT_SEEDS:
+      if (!state.farm) return state;
+
+      return {
+        ...state,
+        farm: convertTubersToSeeds(state.farm, action.payload || 1),
+      };
+
+    case GAME_SESSION_ACTIONS.FARM_DELIVER_CONTRACT:
+      if (!state.farm) return state;
+
+      return {
+        ...state,
+        farm: deliverContract(state.farm, action.payload),
+      };
+
+    case GAME_SESSION_ACTIONS.FARM_RESTART:
+      if (!state.farm || !state.selectedCrater) return state;
+
+      return {
+        ...state,
+        farm: createFarmState(state.selectedCrater),
       };
 
     case GAME_SESSION_ACTIONS.APPLY_INTERVENTION:

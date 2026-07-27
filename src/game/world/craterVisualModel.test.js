@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   FLOOR_DEPTH,
   getCraterDisplayScale,
+  getCraterHoleAngle,
   getCraterMountRadius,
   getCraterWorldRadius,
+  PLAIN_OUTER,
   TERRAIN_BANDS,
   ZONE_BANDS,
 } from './craterVisualModel';
@@ -36,15 +38,22 @@ describe('craterVisualModel', () => {
       .toBe(getCraterDisplayScale({ diameter: 45 }));
   });
 
-  it('sinks every crater floor below the sphere surface', () => {
-    // 旧挂载半径固定 1.006，12 km 以下的坑坑底全在球面外侧，
-    // 看起来是浮在火星表面上的碟子而不是凹坑。
+  it('rests every crater floor on the sphere and pierces a smaller hole', () => {
+    // 球体是闭合不透明的：任何低于球面 1.0 的几何都会被遮挡（穿模）。
+    // 坑底必须恰好落在球面上，凹陷感由球面开洞（discard）提供。
+    // 洞要盖住坑体但严格小于延伸平原的外沿，否则平原边缘露缝。
     SIZES.forEach((diameter) => {
       const crater = { diameter };
+      const scale = getCraterDisplayScale(crater);
       const mount = getCraterMountRadius(crater);
-      const floor = mount - FLOOR_DEPTH * getCraterDisplayScale(crater);
+      const floor = mount - FLOOR_DEPTH * scale;
+      const craterAngle = Math.asin(scale * 0.92);
+      const plainAngle = Math.asin(scale * 0.92 * PLAIN_OUTER);
 
-      expect(floor).toBeLessThan(1);
+      expect(floor).toBeCloseTo(1, 10);
+      expect(mount).toBeGreaterThan(1);
+      expect(getCraterHoleAngle(crater)).toBeGreaterThan(craterAngle);
+      expect(getCraterHoleAngle(crater)).toBeLessThan(plainAngle);
     });
   });
 

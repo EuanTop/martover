@@ -13,6 +13,7 @@ import {
   FLOOR_DEPTH,
   getCraterDisplayScale,
   getCraterMountRadius,
+  PLAIN_OUTER,
   TERRAIN_BANDS,
   TERRAIN_RADIUS,
   ZONE_BANDS,
@@ -27,8 +28,43 @@ const smoothStep = (value) => {
   return clamped * clamped * (3 - 2 * clamped);
 };
 
-const getCraterSeed = (crater) => stableHash(
+export const getCraterSeed = (crater) => stableHash(
   crater?.id || crater?.CRATER_ID || 'martover-crater'
+);
+
+// 每个坑的地形档案：中央丘只出现在大坑（真实火星复杂坑的特征），
+// 阶地与坑底起伏的幅度由 seed 决定。按 seed 缓存，保证地形网格与
+// 植株/碎石的贴地采样（都只拿得到 seed）读到同一份参数。
+const DEFAULT_TERRAIN_PROFILE = Object.freeze({
+  moundHeight: 0,
+  moundRadius: 0.14,
+  terraceStrength: 0.35,
+  undulation: 0.01,
+});
+const terrainProfiles = new Map();
+
+const registerTerrainProfile = (crater) => {
+  const seed = getCraterSeed(crater);
+
+  if (!terrainProfiles.has(seed)) {
+    const scale = getCraterDisplayScale(crater);
+    const isComplex = scale > 0.03;
+
+    terrainProfiles.set(seed, {
+      moundHeight: isComplex
+        ? 0.032 + seededUnit(seed, 401) * 0.026
+        : 0,
+      moundRadius: 0.11 + seededUnit(seed, 402) * 0.06,
+      terraceStrength: 0.3 + seededUnit(seed, 403) * 0.3,
+      undulation: 0.016 + seededUnit(seed, 404) * 0.012,
+    });
+  }
+
+  return seed;
+};
+
+const getTerrainProfile = (seed) => (
+  terrainProfiles.get(seed) || DEFAULT_TERRAIN_PROFILE
 );
 
 // 网格顶点的世界半径是 TERRAIN_RADIUS * normalizedRadius * ellipticity
@@ -49,7 +85,7 @@ const getContourFactors = (angle, seed) => {
 
 // 由归一化半径与角度求出真实的世界平面坐标与贴地高度。
 // 所有放置逻辑（植株、干预标记、碎石）都必须走这里。
-const sampleTerrain = (normalizedRadius, angle, seed) => {
+export const sampleTerrain = (normalizedRadius, angle, seed) => {
   const { contourNoise, ellipticity } = getContourFactors(angle, seed);
   const radius = TERRAIN_RADIUS
     * normalizedRadius
@@ -80,35 +116,73 @@ const getTerrainHeight = (normalizedRadius, x, z, seed) => {
   ) * 0.0018;
 
   if (normalizedRadius < TERRAIN_BANDS.floor) {
-    return -FLOOR_DEPTH + surfaceNoise * 0.35;
+    const profile = getTerrainProfile(seed);
+    // 起伏只向上叠加（≥0）：坑底基准 -FLOOR_DEPTH 恰好落在球面上，
+    // 再往下就沉进火星球体内部。
+    const relief = (0.5 + 0.5 * Math.sin(x * 34 + phase * 21))
+      * (0.5 + 0.5 * Math.cos(z * 27 - phase * 15))
+      * profile.undulation;
+    const mound = profile.moundHeight
+      * smoothStep(1 - normalizedRadius / profile.moundRadius);
+
+    return -FLOOR_DEPTH + relief + mound + surfaceNoise * 0.35;
   }
 
   if (normalizedRadius < TERRAIN_BANDS.slope) {
-    const slope = smoothStep((normalizedRadius - 0.34) / 0.38);
+    const profile = getTerrainProfile(seed);
+    const t = (normalizedRadius - TERRAIN_BANDS.floor)
+      / (TERRAIN_BANDS.slope - TERRAIN_BANDS.floor);
+    // 阶地：把坡面量化成台阶（真实撞击坑坑壁的滑塌阶地），
+    // 台阶随角度轻微起伏避免同心圆感；两端渐隐保证与
+    // 坑底/坑缘的高度连续。
+    const benches = 3;
+    const wobbled = THREE.MathUtils.clamp(t + angularNoise * 0.05, 0, 1);
+    const scaled = wobbled * benches;
+    const stepped = (
+      Math.floor(scaled)
+      + smoothStep((scaled - Math.floor(scaled) - 0.3) / 0.4)
+    ) / benches;
+    const terraceBlend = profile.terraceStrength
+      * smoothStep(t / 0.18)
+      * smoothStep((1 - t) / 0.18);
+    const shaped = THREE.MathUtils.lerp(smoothStep(t), stepped, terraceBlend);
     const erosion = Math.max(0, Math.sin(x * 25 + z * 13 + phase * 31))
-      * Math.sin(slope * Math.PI)
+      * Math.sin(smoothStep(t) * Math.PI)
       * 0.0045;
 
-    return THREE.MathUtils.lerp(-0.128, 0.046, slope)
+    return THREE.MathUtils.lerp(-0.128, 0.046, shaped)
       + surfaceNoise
       - erosion;
   }
 
   if (normalizedRadius < 0.86) {
     const rim = (normalizedRadius - 0.72) / 0.14;
-    const brokenRim = 0.01 + angularNoise * 0.012;
+    const brokenRim = 0.012 + angularNoise * 0.02;
 
     return 0.044
       + Math.sin(rim * Math.PI) * (0.026 + brokenRim)
-      + surfaceNoise;
+      + surfaceNoise * 1.6;
   }
 
   const apron = smoothStep((normalizedRadius - 0.86) / 0.14);
-  return THREE.MathUtils.lerp(
+  const apronHeight = THREE.MathUtils.lerp(
     0.032 + angularNoise * 0.004 + surfaceNoise,
     0.002,
     apron
   );
+
+  if (normalizedRadius <= 1) return apronHeight;
+
+  // 周边平原（nr 1.0-1.8）：低频起伏的火星地表，覆盖相机近景，
+  // 让模糊的全球贴图只留在远景。
+  const plain = (normalizedRadius - 1) / (PLAIN_OUTER - 1);
+  const rolling = (
+    Math.sin(x * 6.2 + phase * 9) * 0.5
+    + Math.cos(z * 5.1 - phase * 6) * 0.35
+    + Math.sin((x - z) * 9.5 + phase * 15) * 0.15
+  ) * 0.004;
+
+  return 0.002 + rolling * smoothStep(plain * 3) + surfaceNoise;
 };
 
 // 地形色板与暂存色提到模块级。旧实现每个顶点都 new 四个
@@ -119,6 +193,8 @@ const TERRAIN_PALETTE = Object.freeze({
   slope: new THREE.Color('#56352c'),
   rim: new THREE.Color('#744638'),
   apron: new THREE.Color('#634034'),
+  // 周边平原向火星贴图基调靠拢，远近色彩衔接。
+  plain: new THREE.Color('#b06a45'),
 });
 
 const getTerrainColor = (
@@ -131,7 +207,7 @@ const getTerrainColor = (
   // 调用方传入复用的 Color 实例；缺省时才新建。
   target = new THREE.Color()
 ) => {
-  const { floor, slope, rim, apron } = TERRAIN_PALETTE;
+  const { floor, slope, rim, apron, plain } = TERRAIN_PALETTE;
   const color = target;
 
   if (normalizedRadius < TERRAIN_BANDS.floor) {
@@ -146,10 +222,15 @@ const getTerrainColor = (
       rim,
       smoothStep((normalizedRadius - 0.72) / 0.1)
     );
-  } else {
+  } else if (normalizedRadius <= 1) {
     color.copy(rim).lerp(
       apron,
       smoothStep((normalizedRadius - 0.86) / 0.14)
+    );
+  } else {
+    color.copy(apron).lerp(
+      plain,
+      smoothStep((normalizedRadius - 1) / 0.35)
     );
   }
 
@@ -171,10 +252,12 @@ const getTerrainColor = (
   return color;
 };
 
-const createCraterTerrainGeometry = (crater) => {
-  const radialSegments = 34;
+export const createCraterTerrainGeometry = (crater) => {
+  const craterSegments = 44;
+  const plainSegments = 12;
+  const radialSegments = craterSegments + plainSegments;
   const angularSegments = 96;
-  const seed = getCraterSeed(crater);
+  const seed = registerTerrainProfile(crater);
   const layerCount = Number(crater?.layerNumber) || 1;
   const centerHeight = getTerrainHeight(0, 0, 0, seed);
   const positions = [0, centerHeight, 0];
@@ -194,9 +277,16 @@ const createCraterTerrainGeometry = (crater) => {
 
   // 单个复用实例贯穿全部顶点。
   const scratchColor = new THREE.Color();
+  // 顶点色烘假 AO：径向坡度对主光方向（+X 侧、约 38 度仰角）
+  // 的朝向决定明暗，背光坑壁与坑底交界自然变暗。
+  const aoEpsilon = 0.012;
+  const lightBias = 2.2;
 
   for (let ring = 1; ring <= radialSegments; ring += 1) {
-    const normalizedRadius = ring / radialSegments;
+    // 坑体（0..1）占 44 环，周边平原（1..PLAIN_OUTER）占 12 环。
+    const normalizedRadius = ring <= craterSegments
+      ? ring / craterSegments
+      : 1 + ((ring - craterSegments) / plainSegments) * (PLAIN_OUTER - 1);
 
     for (let segment = 0; segment < angularSegments; segment += 1) {
       const angle = (segment / angularSegments) * Math.PI * 2;
@@ -210,16 +300,35 @@ const createCraterTerrainGeometry = (crater) => {
         layerCount,
         scratchColor
       );
+      const heightAhead = getTerrainHeight(
+        Math.min(PLAIN_OUTER, normalizedRadius + aoEpsilon),
+        x,
+        z,
+        seed
+      );
+      const heightBehind = getTerrainHeight(
+        Math.max(0, normalizedRadius - aoEpsilon),
+        x,
+        z,
+        seed
+      );
+      const radialSlope = (heightAhead - heightBehind)
+        / (2 * aoEpsilon * TERRAIN_RADIUS);
+      const shade = THREE.MathUtils.clamp(
+        0.9 - radialSlope * Math.cos(angle) * lightBias,
+        0.66,
+        1.12
+      );
 
       positions.push(
         x,
         height,
         z
       );
-      colors.push(color.r, color.g, color.b);
+      colors.push(color.r * shade, color.g * shade, color.b * shade);
       uvs.push(
-        0.5 + Math.cos(angle) * normalizedRadius * 0.5,
-        0.5 + Math.sin(angle) * normalizedRadius * 0.5
+        0.5 + Math.cos(angle) * (normalizedRadius / PLAIN_OUTER) * 0.5,
+        0.5 + Math.sin(angle) * (normalizedRadius / PLAIN_OUTER) * 0.5
       );
     }
   }
@@ -269,7 +378,7 @@ const createCraterTerrainGeometry = (crater) => {
 // 旧实现是严格同心圆渐变，把地形网格已经做出的不规则外沿
 // 又抹回成一个完美的圆。这里改为按角度调制淡出半径，
 // 并与地形轮廓噪声同源同相位，使遮罩边界跟着地貌起伏。
-const createBlendTexture = (seed = 1) => {
+export const createBlendTexture = (seed = 1) => {
   const size = 256;
   const canvas = document.createElement('canvas');
   canvas.width = size;
@@ -286,8 +395,11 @@ const createBlendTexture = (seed = 1) => {
       const angle = Math.atan2(dy, dx);
       const { contourNoise, ellipticity } = getContourFactors(angle, seed);
       // 淡出区间随角度移动，因此没有任何一圈是完美的圆。
+      // 内沿收到 0.86：球面开洞的角半径是坑体外沿的 0.82 倍，
+      // 0.86 以内保持完全不透明，半透明淡出只发生在洞外、
+      // 有球面兜底的裙边上，不会露出洞里的黑。
       const edge = ellipticity * (1 + contourNoise * 1.9);
-      const inner = edge * 0.66;
+      const inner = edge * 0.86;
       const alpha = 1 - smoothStep(
         (distance - inner) / Math.max(0.0001, edge - inner)
       );
@@ -309,24 +421,105 @@ const createBlendTexture = (seed = 1) => {
   return texture;
 };
 
-const CraterDebris = ({ seed }) => {
-  const meshRef = useRef();
-  const rocks = useMemo(() => (
-    Array.from({ length: 30 }, (_, index) => {
-      const angle = seededUnit(seed, index * 4) * Math.PI * 2;
-      // 归一化半径收进 0.62-0.97：旧值 0.7-1.0 是世界半径，
-      // 超出网格外沿 0.92，实测 11/30 块碎石飘在裸火星球面上。
-      const radius = 0.62 + seededUnit(seed, index * 4 + 1) * 0.35;
-      const size = 0.012 + seededUnit(seed, index * 4 + 2) * 0.026;
+// 岩石细节纹理：撒点噪声 + 反照率斑块 + 小陨击凹坑。
+// 44x96 网格的顶点色渐变在近景下是一团模糊的同心环，
+// 逐像素细节必须由贴图承担。乘在顶点色上使用（material.map）。
+export const createRockDetailTexture = (seed = 1) => {
+  const size = 512;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const context = canvas.getContext('2d');
 
-      return {
-        angle,
-        radius,
-        size,
-        stretch: 0.65 + seededUnit(seed, index * 4 + 3) * 0.9,
-      };
-    })
-  ), [seed]);
+  context.fillStyle = '#cfc4bb';
+  context.fillRect(0, 0, size, size);
+
+  // 大尺度反照率斑块。
+  for (let index = 0; index < 26; index += 1) {
+    const x = seededUnit(seed, 1000 + index * 3) * size;
+    const y = seededUnit(seed, 1001 + index * 3) * size;
+    const radius = 26 + seededUnit(seed, 1002 + index * 3) * 90;
+    const bright = seededUnit(seed, 1003 + index * 3) > 0.5;
+    const gradient = context.createRadialGradient(x, y, 0, x, y, radius);
+
+    gradient.addColorStop(0, bright
+      ? 'rgba(236, 226, 214, 0.20)'
+      : 'rgba(96, 74, 62, 0.20)');
+    gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    context.fillStyle = gradient;
+    context.fillRect(x - radius, y - radius, radius * 2, radius * 2);
+  }
+
+  // 小陨击凹坑：暗底 + 偏移亮弧，方向与场景主光一致。
+  for (let index = 0; index < 34; index += 1) {
+    const x = seededUnit(seed, 2000 + index * 4) * size;
+    const y = seededUnit(seed, 2001 + index * 4) * size;
+    const radius = 3 + seededUnit(seed, 2002 + index * 4) * 11;
+
+    context.fillStyle = 'rgba(70, 52, 44, 0.5)';
+    context.beginPath();
+    context.arc(x, y, radius, 0, Math.PI * 2);
+    context.fill();
+
+    context.strokeStyle = 'rgba(238, 224, 208, 0.55)';
+    context.lineWidth = Math.max(1, radius * 0.3);
+    context.beginPath();
+    context.arc(x, y, radius * 0.82, Math.PI * 0.75, Math.PI * 1.6);
+    context.stroke();
+  }
+
+  // 逐像素撒点颗粒。26 万像素用字符串哈希太慢，
+  // 换确定性 LCG：同一 seed 永远得到同一张纹理。
+  const image = context.getImageData(0, 0, size, size);
+  let rng = (seed >>> 0) || 1;
+  const nextRandom = () => {
+    rng = (Math.imul(rng, 1664525) + 1013904223) >>> 0;
+    return rng / 4294967296;
+  };
+
+  for (let pixel = 0; pixel < image.data.length; pixel += 4) {
+    const grain = (nextRandom() - 0.5) * 46 + (nextRandom() - 0.5) * 26;
+
+    image.data[pixel] = clampChannel(image.data[pixel] + grain);
+    image.data[pixel + 1] = clampChannel(image.data[pixel + 1] + grain * 0.92);
+    image.data[pixel + 2] = clampChannel(image.data[pixel + 2] + grain * 0.85);
+  }
+
+  context.putImageData(image, 0, 0);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.anisotropy = 4;
+  texture.needsUpdate = true;
+  return texture;
+};
+
+const clampChannel = (value) => Math.max(0, Math.min(255, value));
+
+export const CraterDebris = ({ seed }) => {
+  const meshRef = useRef();
+  const rocks = useMemo(() => {
+    // 坑缘碎石带 + 坑内散落岩块：真实撞击坑的坑底和坑壁不是
+    // 干净的碗面，细碎滚石是质感的主要来源之一。
+    // 归一化半径收进 0.62-0.97：旧值 0.7-1.0 是世界半径，
+    // 超出网格外沿 0.92，实测 11/30 块碎石飘在裸火星球面上。
+    const rimRocks = Array.from({ length: 30 }, (_, index) => ({
+      angle: seededUnit(seed, index * 4) * Math.PI * 2,
+      radius: 0.62 + seededUnit(seed, index * 4 + 1) * 0.35,
+      size: 0.012 + seededUnit(seed, index * 4 + 2) * 0.026,
+      stretch: 0.65 + seededUnit(seed, index * 4 + 3) * 0.9,
+    }));
+    const innerRocks = Array.from({ length: 18 }, (_, index) => ({
+      angle: seededUnit(seed, 500 + index * 4) * Math.PI * 2,
+      radius: 0.08 + seededUnit(seed, 500 + index * 4 + 1) * 0.5,
+      size: 0.005 + seededUnit(seed, 500 + index * 4 + 2) * 0.013,
+      stretch: 0.7 + seededUnit(seed, 500 + index * 4 + 3) * 0.8,
+    }));
+
+    return [...rimRocks, ...innerRocks];
+  }, [seed]);
 
   useEffect(() => {
     if (!meshRef.current) return;
@@ -541,7 +734,9 @@ const TuberCluster = ({ growth, stress, index }) => {
   const clusterRef = useRef();
   const tuberGrowth = THREE.MathUtils.clamp((growth - 0.48) * 2.2, 0, 1);
   const tuberRefs = useRef([]);
-  const tuberColor = stress > 68 ? '#9a4f35' : '#bd7b43';
+  // 与二/三关成熟土豆（PotatoPlanet 的 PotatoSpecimen）同一套
+  // 质感语言：奶白偏暖、强变形、高光清漆，而不是暗棕色小石子。
+  const tuberColor = stress > 68 ? '#d9a06c' : '#f6e8cf';
 
   useFrame((state) => {
     if (!clusterRef.current) return;
@@ -567,7 +762,7 @@ const TuberCluster = ({ growth, stress, index }) => {
   return (
     <group ref={clusterRef} scale={0.82 + tuberGrowth * 0.18}>
       {[0.55, 3.35].map((angle, tuberIndex) => {
-        const size = (0.018 + growth * 0.014) * (0.72 + tuberGrowth * 0.28);
+        const size = (0.028 + growth * 0.022) * (0.72 + tuberGrowth * 0.28);
 
         return (
           <group
@@ -585,21 +780,19 @@ const TuberCluster = ({ growth, stress, index }) => {
               rotation={[0.3, angle, 0.1]}
               scale={[size * 1.22, size, size * 0.92]}
               outlineScale={[
-                size * 1.3,
-                size * 1.04,
-                size * 0.96,
+                size * 1.26,
+                size * 1.03,
+                size * 0.95,
               ]}
               color={tuberColor}
-              outlineColor="#5d2a1d"
+              outlineColor="#7c4a30"
               opacity={0.96}
-              outlineOpacity={0.82}
-              distort={0.16}
-              speed={0.7 + index * 0.015}
-              metalness={0.08}
-              roughness={0.66}
-              // 块茎在地下且尺寸很小，28 段细分在 12 株时是
-              // 6 万顶点；16 段视觉上无差别。
-              geometryDetail={16}
+              outlineOpacity={0.6}
+              distort={0.34}
+              speed={0.9 + index * 0.02}
+              metalness={0.42}
+              roughness={0.2}
+              geometryDetail={24}
             />
           </group>
         );
@@ -635,7 +828,7 @@ const EmergencePulse = ({ growth, index }) => {
   );
 };
 
-const PotatoPlant = ({
+export const PotatoPlant = ({
   basePosition,
   index,
   growth,
@@ -689,7 +882,7 @@ const PotatoPlant = ({
       <EmergencePulse growth={growth} index={index} />
       <RootLines maturity={growth} stress={stress} />
       <mesh position={[0, stemHeight * 0.5, 0]}>
-        <cylinderGeometry args={[0.008, 0.014, stemHeight, 9]} />
+        <cylinderGeometry args={[0.011, 0.017, stemHeight, 9]} />
         <meshStandardMaterial
           color={stemColor}
           roughness={0.9}
@@ -707,7 +900,7 @@ const PotatoPlant = ({
           0.08,
           1
         );
-        const leafScale = (0.42 + growth * 0.48) * vitality * unfurl;
+        const leafScale = (0.58 + growth * 0.55) * vitality * unfurl;
 
         return (
           <mesh
@@ -726,9 +919,9 @@ const PotatoPlant = ({
               side * (0.74 + wilt * 0.5),
             ]}
             scale={[
-              0.062 * leafScale,
-              0.011 * leafScale,
-              0.026 * leafScale,
+              0.088 * leafScale,
+              0.015 * leafScale,
+              0.04 * leafScale,
             ]}
           >
             <sphereGeometry args={[1, 16, 10]} />
@@ -1587,6 +1780,7 @@ const CraterCultivationScene = ({
     [crater.id]
   );
   const blendTexture = useMemo(() => createBlendTexture(seed), [seed]);
+  const detailTexture = useMemo(() => createRockDetailTexture(seed), [seed]);
   const options = getCraterZoneOptions();
   const isPlanting = simulation.stage === BREEDING_STAGES.PLANTING;
   const isGrowing = simulation.stage === BREEDING_STAGES.GROWING;
@@ -1596,7 +1790,8 @@ const CraterCultivationScene = ({
   useEffect(() => () => {
     terrainGeometry.dispose();
     blendTexture.dispose();
-  }, [blendTexture, terrainGeometry]);
+    detailTexture.dispose();
+  }, [blendTexture, detailTexture, terrainGeometry]);
 
   return (
     <group
@@ -1607,7 +1802,8 @@ const CraterCultivationScene = ({
       <mesh geometry={terrainGeometry} receiveShadow>
         <meshStandardMaterial
           vertexColors
-          color="#8a4631"
+          color="#a05a41"
+          map={detailTexture}
           alphaMap={blendTexture}
           transparent
           alphaTest={0.025}
@@ -1655,7 +1851,7 @@ const CraterCultivationScene = ({
 
       <pointLight
         position={[0.38, 0.8, 0.24]}
-        intensity={0.4}
+        intensity={0.22}
         distance={2}
         color="#ffd2b5"
       />

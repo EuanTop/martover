@@ -10,6 +10,8 @@ import ProgressBar from '../../Components/ProgressBar';
 import TypeShuffleText from '../../Components/TypeShuffle/TypeShuffle';
 import Button from '../../Components/common/Button/Button';
 import GameHUD from '../../game/ui/GameHUD';
+import FarmHUD from '../../game/ui/FarmHUD';
+import { PLOT_STATUS, TOOL_MODES } from '../../game/economy/farmEconomy';
 import {
   TUBER_USES,
   VIEW_MODES,
@@ -59,6 +61,11 @@ const CloudDownPage = ({
   onRecover,
   preservedSamples,
   outcome,
+  farm,
+  onFarmPlotAction,
+  onFarmConvertSeeds,
+  onFarmDeliverContract,
+  onFarmRestart,
   craterData,
   appReady
 }) => {
@@ -95,6 +102,7 @@ const CloudDownPage = ({
   const [hideMarsModel, setHideMarsModel] = useState(false);
   const [selectedTuberUse, setSelectedTuberUse] = useState(TUBER_USES.SEED);
   const [selectedIntervention, setSelectedIntervention] = useState(null);
+  const [selectedFarmTool, setSelectedFarmTool] = useState(null);
 
   useEffect(() => {
     if (viewMode !== VIEW_MODES.CRATER || simulation?.stage !== 'growing') {
@@ -264,6 +272,26 @@ const TimestampDisplay = ({ isDarkMode }) => {
     setSelectedIntervention(null);
   };
 
+  // 地块点击：优先用当前选中的工具；未选工具时按地块状态取
+  // 最自然的动作（成熟→收获，空地→种植）。
+  const handleFarmPlotClick = (plotId) => {
+    if (!farm) return;
+
+    if (selectedFarmTool) {
+      onFarmPlotAction(plotId, selectedFarmTool);
+      return;
+    }
+
+    const plot = farm.plots.find((item) => item.id === plotId);
+    if (!plot) return;
+
+    if (plot.status === PLOT_STATUS.READY) {
+      onFarmPlotAction(plotId, TOOL_MODES.HARVEST);
+    } else if (plot.status === PLOT_STATUS.EMPTY && !plot.facility) {
+      onFarmPlotAction(plotId, TOOL_MODES.PLANT);
+    }
+  };
+
   // 如果应用尚未准备好，不显示任何内容
   // 所有加载工作都在 App.js 中完成，这里不再显示加载提示
   if (!appReady) {
@@ -356,6 +384,9 @@ const TimestampDisplay = ({ isDarkMode }) => {
                 hideMarsModel={hideMarsModel}
                 viewMode={viewMode}
                 simulation={simulation}
+                farm={farm}
+                selectedFarmTool={selectedFarmTool}
+                onFarmPlotClick={handleFarmPlotClick}
                 selectedTuberUse={selectedTuberUse}
                 selectedIntervention={selectedIntervention}
                 onPlantInZone={onPlantInZone}
@@ -387,7 +418,18 @@ const TimestampDisplay = ({ isDarkMode }) => {
             />
           )}
           
-          {!showIntro && showMars && !isTransitioning && (
+          {!showIntro && showMars && !isTransitioning && farm && (
+            <FarmHUD
+              farm={farm}
+              selectedTool={selectedFarmTool}
+              onSelectTool={setSelectedFarmTool}
+              onConvertSeeds={onFarmConvertSeeds}
+              onDeliverContract={onFarmDeliverContract}
+              onRestart={onFarmRestart}
+            />
+          )}
+
+          {!showIntro && showMars && !isTransitioning && !farm && (
             <GameHUD
               viewMode={viewMode}
               selectedCrater={selectedCrater}

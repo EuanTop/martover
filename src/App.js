@@ -57,6 +57,11 @@ const AppRoutes = () => {
     recoverFromFailure,
     preservedSamples,
     outcome,
+    farm,
+    farmPlotAction,
+    farmConvertSeeds,
+    farmDeliverContract,
+    farmRestart,
   } = useGameSession();
 
   // 显示加载状态
@@ -101,8 +106,13 @@ const AppRoutes = () => {
                 onRecover={recoverFromFailure}
                 preservedSamples={preservedSamples}
                 outcome={outcome}
+                farm={farm}
+                onFarmPlotAction={farmPlotAction}
+                onFarmConvertSeeds={farmConvertSeeds}
+                onFarmDeliverContract={farmDeliverContract}
+                onFarmRestart={farmRestart}
                 craterData={craterData?.available || []}
-                appReady={appReady} 
+                appReady={appReady}
               />
             </>
           } 

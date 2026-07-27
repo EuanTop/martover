@@ -13,10 +13,10 @@ const PLANET_FOV = 75;
 const CRATER_FOV = 56;
 
 const getCraterCamera = (crater) => {
-  // 坑体挂载点已下沉到球面之下，相机目标必须跟随同一半径，
-  // 否则镜头会瞄准坑口上方的空气。
-  const target = getCraterWorldVector(crater, MARS_RADIUS * getCraterMountRadius(crater));
-  const normal = target.clone().normalize();
+  // 相机目标跟随坑体挂载半径（坑底贴着球面、坑缘凸出），
+  // 与 CraterCultivationScene 的实际挂载位置保持一致。
+  const rawTarget = getCraterWorldVector(crater, MARS_RADIUS * getCraterMountRadius(crater));
+  const normal = rawTarget.clone().normalize();
   const tangent = new THREE.Vector3(0, 1, 0).cross(normal);
 
   if (tangent.lengthSq() < 0.01) {
@@ -26,19 +26,39 @@ const getCraterCamera = (crater) => {
   tangent.normalize();
   const bitangent = normal.clone().cross(tangent).normalize();
   const craterRadius = getCraterWorldRadius(crater);
-  // 策划 244 行要求 35-45 度的倾斜接近角。这组比例给出 40.0 度：
-  // atan(2.0 / hypot(2.35, 2.35*0.18)) ≈ 40.0。
-  const cameraHeight = craterRadius * 2.0;
-  const obliqueOffset = craterRadius * 2.35;
+
+  // 相机 up 用地表切平面里指向行星北的方向：把世界 Y 投影到
+  // 切平面。若沿用世界 (0,1,0)，高纬度坑的地平线会整个歪掉
+  // （地表法线与世界 Y 夹角越大画面翻滚越重）。极点附近投影
+  // 退化时回退到经线方向。
+  const up = new THREE.Vector3(0, 1, 0)
+    .addScaledVector(normal, -normal.y);
+
+  if (up.lengthSq() < 0.01) {
+    up.copy(bitangent);
+  }
+
+  up.normalize();
+
+  // 2.5D 经营视角：相机从坑的「南侧」（-up 方向）以约 42 度俯角
+  // 望向坑体。切向偏移严格沿屏幕下方，坑体水平居中、地面铺满
+  // 画面、地平线收在画面顶端 —— 不是正上方俯视的圆盘，也不是
+  // 贴着球侧、星球轮廓斜占半边的掠视。
+  const cameraHeight = craterRadius * 2.2;
+  const obliqueOffset = craterRadius * 2.4;
+
+  // 瞄准点沿 up 略微下移：底部 HUD 占掉约四分之一画面，
+  // 下移后坑体落在可视区域的视觉中心而不是被 HUD 压住。
+  const target = rawTarget.clone().addScaledVector(up, -craterRadius * 0.25);
 
   return {
     fov: CRATER_FOV,
     target,
-    position: target
+    up,
+    position: rawTarget
       .clone()
       .add(normal.clone().multiplyScalar(cameraHeight))
-      .add(tangent.clone().multiplyScalar(obliqueOffset))
-      .add(bitangent.clone().multiplyScalar(obliqueOffset * 0.18)),
+      .addScaledVector(up, -obliqueOffset),
   };
 };
 
@@ -67,6 +87,7 @@ const WorldCameraRig = React.memo(function WorldCameraRig({
       destination = {
         fov: PLANET_FOV,
         target: new THREE.Vector3(0, 0, 0),
+        up: new THREE.Vector3(0, 1, 0),
         position: camera.position.clone().normalize().multiplyScalar(5.2),
       };
     }
@@ -79,9 +100,11 @@ const WorldCameraRig = React.memo(function WorldCameraRig({
       duration: viewMode === VIEW_MODES.HUMAN ? 0.55 : 1.35,
       fromPosition: camera.position.clone(),
       fromTarget: controls.target.clone(),
+      fromUp: camera.up.clone(),
       fromFov: camera.fov,
       toPosition: destination.position,
       toTarget: destination.target,
+      toUp: destination.up,
       toFov: destination.fov,
     };
     camera.near = 0.01;
@@ -116,6 +139,11 @@ const WorldCameraRig = React.memo(function WorldCameraRig({
       transition.toFov,
       progress
     );
+    camera.up.lerpVectors(
+      transition.fromUp,
+      transition.toUp,
+      progress
+    ).normalize();
     camera.updateProjectionMatrix();
     camera.lookAt(controls.target);
     // 过渡期间不能调用 controls.update()：OrbitControls 的距离夹取

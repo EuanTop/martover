@@ -24,19 +24,26 @@ export const GameSessionProvider = ({ children }) => {
   const [state, dispatch] = useReducer(gameSessionReducer, initialGameSessionState);
 
   useEffect(() => {
-    if (
-      state.simulation?.stage !== BREEDING_STAGES.GROWING
-      || state.simulation.sol >= GENERATION_LENGTH_SOLS
-    ) {
-      return undefined;
-    }
+    // 经营模式：只要基地存活，SOL 时钟连续流动（策划 §19.5）。
+    const farmRunning = state.farm && !state.farm.outcome;
+    const breedingRunning = (
+      state.simulation?.stage === BREEDING_STAGES.GROWING
+      && state.simulation.sol < GENERATION_LENGTH_SOLS
+    );
+
+    if (!farmRunning && !breedingRunning) return undefined;
 
     const timer = window.setInterval(() => {
       dispatch({ type: GAME_SESSION_ACTIONS.TICK });
     }, SOL_DURATION_MS);
 
     return () => window.clearInterval(timer);
-  }, [state.simulation?.stage, state.simulation?.sol]);
+  }, [
+    state.farm?.outcome,
+    Boolean(state.farm),
+    state.simulation?.stage,
+    state.simulation?.sol,
+  ]);
 
   const selectCrater = useCallback((crater) => {
     dispatch({ type: GAME_SESSION_ACTIONS.SELECT_CRATER, payload: crater });
@@ -81,6 +88,28 @@ export const GameSessionProvider = ({ children }) => {
     dispatch({ type: GAME_SESSION_ACTIONS.RECOVER_FROM_FAILURE });
   }, []);
 
+  const farmPlotAction = useCallback((plotId, tool) => {
+    dispatch({
+      type: GAME_SESSION_ACTIONS.FARM_PLOT_ACTION,
+      payload: { plotId, tool },
+    });
+  }, []);
+
+  const farmConvertSeeds = useCallback((count = 1) => {
+    dispatch({ type: GAME_SESSION_ACTIONS.FARM_CONVERT_SEEDS, payload: count });
+  }, []);
+
+  const farmDeliverContract = useCallback((contractId) => {
+    dispatch({
+      type: GAME_SESSION_ACTIONS.FARM_DELIVER_CONTRACT,
+      payload: contractId,
+    });
+  }, []);
+
+  const farmRestart = useCallback(() => {
+    dispatch({ type: GAME_SESSION_ACTIONS.FARM_RESTART });
+  }, []);
+
   const resetSession = useCallback(() => {
     dispatch({ type: GAME_SESSION_ACTIONS.RESET });
   }, []);
@@ -98,6 +127,10 @@ export const GameSessionProvider = ({ children }) => {
     feedHuman,
     startNextGeneration,
     recoverFromFailure,
+    farmPlotAction,
+    farmConvertSeeds,
+    farmDeliverContract,
+    farmRestart,
     resetSession,
   }), [
     selectCrater,
@@ -110,6 +143,10 @@ export const GameSessionProvider = ({ children }) => {
     feedHuman,
     startNextGeneration,
     recoverFromFailure,
+    farmPlotAction,
+    farmConvertSeeds,
+    farmDeliverContract,
+    farmRestart,
     resetSession,
   ]);
 

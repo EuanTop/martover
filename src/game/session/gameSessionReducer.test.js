@@ -9,10 +9,12 @@ import {
 import {
   BREEDING_STAGES,
   CRATER_ZONES,
+  createBreedingSimulation,
   PRESERVED_SAMPLE_LIMIT,
   TUBER_USES,
   VIEW_MODES,
 } from '../simulation/breedingSimulation';
+import { PLOT_STATUS, TOOL_MODES } from '../economy/farmEconomy';
 
 const crater = {
   id: '01-000001',
@@ -30,14 +32,60 @@ const reduce = (state, type, payload) => (
   gameSessionReducer(state, { type, payload })
 );
 
+// 2.0 转向后 BEGIN_BREEDING 进入经营模式；育种子系统的 reducer
+// 分支（喂食、衰减、回退）仍然存在，测试通过直接注入模拟状态驱动。
+const startBreedingState = () => ({
+  ...initialGameSessionState,
+  selectedCrater: crater,
+  phase: GAME_PHASES.POTATO_BREEDING,
+  viewMode: VIEW_MODES.CRATER,
+  simulation: createBreedingSimulation(
+    crater,
+    1,
+    initialGameSessionState.human,
+    null,
+    initialGameSessionState.resources
+  ),
+});
+
 describe('gameSessionReducer', () => {
-  it('runs one generation from the planet to a persistent human response', () => {
+  it('enters farm mode with a live base when a crater is confirmed', () => {
     let state = reduce(
       initialGameSessionState,
       GAME_SESSION_ACTIONS.SELECT_CRATER,
       crater
     );
     state = reduce(state, GAME_SESSION_ACTIONS.BEGIN_BREEDING);
+
+    expect(state.viewMode).toBe(VIEW_MODES.CRATER);
+    expect(state.farm).not.toBeNull();
+    expect(state.simulation).toBeNull();
+    expect(state.farm.contracts).toHaveLength(2);
+  });
+
+  it('advances the farm clock and executes plot tools', () => {
+    let state = reduce(
+      initialGameSessionState,
+      GAME_SESSION_ACTIONS.SELECT_CRATER,
+      crater
+    );
+    state = reduce(state, GAME_SESSION_ACTIONS.BEGIN_BREEDING);
+    state = reduce(state, GAME_SESSION_ACTIONS.FARM_PLOT_ACTION, {
+      plotId: 'floor-a',
+      tool: TOOL_MODES.PLANT,
+    });
+
+    expect(state.farm.plots.find((plot) => plot.id === 'floor-a').status)
+      .toBe(PLOT_STATUS.GROWING);
+
+    const solBefore = state.farm.sol;
+    state = reduce(state, GAME_SESSION_ACTIONS.TICK);
+
+    expect(state.farm.sol).toBe(solBefore + 1);
+  });
+
+  it('runs one generation from planting to a persistent human response', () => {
+    let state = startBreedingState();
     state = reduce(
       state,
       GAME_SESSION_ACTIONS.PLANT_IN_ZONE,
@@ -78,15 +126,11 @@ describe('gameSessionReducer', () => {
 
     expect(selected.viewMode).toBe(VIEW_MODES.PLANET);
     expect(selected.simulation).toBeNull();
+    expect(selected.farm).toBeNull();
   });
 
   const runToAllocation = (assign) => {
-    let state = reduce(
-      initialGameSessionState,
-      GAME_SESSION_ACTIONS.SELECT_CRATER,
-      crater
-    );
-    state = reduce(state, GAME_SESSION_ACTIONS.BEGIN_BREEDING);
+    let state = startBreedingState();
     state = reduce(state, GAME_SESSION_ACTIONS.PLANT_IN_ZONE, CRATER_ZONES.FLOOR);
 
     for (let sol = 0; sol < 24; sol += 1) {

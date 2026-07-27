@@ -1,0 +1,334 @@
+.hud {
+  --ink: #562913;
+  --panel: rgba(245, 116, 53, 0.86);
+  position: fixed;
+  z-index: 60;
+  color: var(--ink);
+  pointer-events: auto;
+  font-size: 12px;
+}
+
+/* 顶栏：SOL 与四种资源 */
+.topBar {
+  top: 86px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  padding: 8px 14px;
+  background: var(--panel);
+  border: 1px solid var(--ink);
+  backdrop-filter: blur(12px);
+}
+
+.solCell {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding-right: 12px;
+  border-right: 1px solid rgba(86, 41, 19, 0.5);
+}
+
+.solCell span {
+  font-size: 10px;
+}
+
+.solCell strong {
+  font-size: 19px;
+  line-height: 1.1;
+}
+
+.resourceCell {
+  min-width: 62px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 2px 8px;
+}
+
+.resourceCell span {
+  font-size: 11px;
+}
+
+.resourceCell strong {
+  font-size: 16px;
+  line-height: 1.2;
+}
+
+.resourceLow {
+  background: rgba(86, 41, 19, 0.9);
+  color: #ffe3d1;
+}
+
+.alertStrip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 12px;
+  border-left: 1px solid rgba(86, 41, 19, 0.5);
+  max-width: 300px;
+}
+
+.alertStrip b {
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.alertStorm {
+  color: #7c1d08;
+  animation: alert-blink 1.2s steps(2) infinite;
+}
+
+@keyframes alert-blink {
+  50% { opacity: 0.55; }
+}
+
+/* 订单栏：右侧 */
+.contracts {
+  top: 86px;
+  right: 18px;
+  width: 235px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.contractCard {
+  padding: 10px 12px;
+  background: var(--panel);
+  border: 1px solid var(--ink);
+  backdrop-filter: blur(12px);
+}
+
+.contractCard header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.contractCard header strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.contractCard header span {
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.deadlineNear {
+  color: #7c1d08;
+  font-weight: 700;
+}
+
+.contractProgress {
+  margin: 8px 0 6px;
+  height: 6px;
+  background: rgba(86, 41, 19, 0.28);
+  position: relative;
+}
+
+.contractProgress i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--ink);
+}
+
+.contractCard footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.contractCard footer small {
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.deliverButton {
+  border: 1px solid var(--ink);
+  background: var(--ink);
+  color: #ffe9da;
+  font-size: 12px;
+  padding: 4px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.deliverButton:disabled {
+  background: transparent;
+  color: var(--ink);
+  opacity: 0.55;
+  cursor: default;
+}
+
+.contractDone {
+  opacity: 0.65;
+}
+
+.contractDone header strong {
+  text-decoration: line-through;
+}
+
+/* 底部工具栏 */
+.toolbar {
+  left: 50%;
+  bottom: 22px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--panel);
+  border: 1px solid var(--ink);
+  backdrop-filter: blur(12px);
+}
+
+.toolButton {
+  min-width: 84px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid var(--ink);
+  background: rgba(242, 168, 136, 0.4);
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+}
+
+.toolButton strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.toolButton small {
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+.toolButton:hover,
+.toolButton:focus-visible {
+  background: rgba(86, 41, 19, 0.16);
+}
+
+.toolActive {
+  background: var(--ink);
+  color: #ffe9da;
+}
+
+.toolActive:hover,
+.toolActive:focus-visible {
+  background: var(--ink);
+}
+
+.toolButton:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.convertCell {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  padding-left: 10px;
+  border-left: 1px solid rgba(86, 41, 19, 0.5);
+}
+
+/* 日志行 */
+.logLine {
+  left: 50%;
+  bottom: 108px;
+  transform: translateX(-50%);
+  max-width: min(620px, 90vw);
+  padding: 6px 14px;
+  background: rgba(86, 41, 19, 0.78);
+  color: #ffe9da;
+  font-size: 12.5px;
+  line-height: 1.4;
+  text-align: center;
+  pointer-events: none;
+}
+
+/* 工具提示条：选中工具后告诉玩家下一步点哪里 */
+.toolHint {
+  left: 50%;
+  bottom: 140px;
+  transform: translateX(-50%);
+  max-width: min(640px, 90vw);
+  padding: 7px 16px;
+  background: #ffe9da;
+  border: 1px solid var(--ink);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+  text-align: center;
+  pointer-events: none;
+}
+
+/* 结算遮罩 */
+.outcomeOverlay {
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(56, 22, 8, 0.62);
+  backdrop-filter: blur(6px);
+  z-index: 80;
+}
+
+.outcomePanel {
+  width: min(430px, 86vw);
+  padding: 28px 30px;
+  background: var(--panel);
+  border: 1px solid var(--ink);
+  text-align: center;
+}
+
+.outcomePanel strong {
+  display: block;
+  font-size: 24px;
+  margin-bottom: 10px;
+}
+
+.outcomePanel p {
+  font-size: 13px;
+  line-height: 1.6;
+  margin: 0 0 18px;
+}
+
+.outcomePanel button {
+  border: 1px solid var(--ink);
+  background: var(--ink);
+  color: #ffe9da;
+  font-size: 14px;
+  padding: 8px 22px;
+  cursor: pointer;
+}
+
+@media (max-width: 900px) {
+  .contracts {
+    top: auto;
+    bottom: 118px;
+    right: 12px;
+    width: 200px;
+  }
+
+  .topBar {
+    flex-wrap: wrap;
+    max-width: 92vw;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .alertStorm {
+    animation: none;
+  }
+}

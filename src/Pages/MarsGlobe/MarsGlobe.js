@@ -5,9 +5,11 @@ import { EffectComposer, SMAA } from '@react-three/postprocessing';
 import * as THREE from 'three';
 import  { useCursorStore } from '../../store'
 import CraterCultivationScene from '../../game/world/CraterCultivationScene';
+import FarmScene from '../../game/world/FarmScene';
 import CraterViewEffects from '../../game/world/CraterViewEffects';
 import WorldCameraRig from '../../game/world/WorldCameraRig';
 import { calculateCraterPosition } from '../../game/world/worldCoordinates';
+import { getCraterHoleAngle } from '../../game/world/craterVisualModel';
 import { VIEW_MODES } from '../../game/simulation/breedingSimulation';
 
 // 在组件外部创建纹理缓存
@@ -16,11 +18,12 @@ const textureCache = {
   normalMap: null,
 };
 
-const Mars = ({ 
+const Mars = ({
   craters = [],
-  onCraterClick, 
-  selectedId, 
-  showLines, 
+  onCraterClick,
+  selectedId,
+  selectedCrater = null,
+  showLines,
   isDarkMode,
   isInteractive,
   initialPosition = [0, 0, 0],
@@ -33,6 +36,53 @@ const Mars = ({
   const groupRef = useRef();
   const [texturesLoaded, setTexturesLoaded] = useState(false);
   const { gl } = useThree();
+
+  // 球面开洞：坑体的坑底低于坑缘，若坑底要真的凹进球面，
+  // 就必须在球面上挖掉对应位置，否则被闭合球体遮挡（穿模）。
+  // discard 逐片元执行，洞缘精度与球体分段数无关；
+  // uHoleCos > 1 时条件永不满足，即洞关闭，不需要重编译。
+  const holeUniforms = useMemo(() => ({
+    uHoleDir: { value: new THREE.Vector3(1, 0, 0) },
+    uHoleCos: { value: 2 },
+  }), []);
+
+  const injectHoleShader = useMemo(() => (shader) => {
+    shader.uniforms.uHoleDir = holeUniforms.uHoleDir;
+    shader.uniforms.uHoleCos = holeUniforms.uHoleCos;
+    shader.vertexShader = shader.vertexShader
+      .replace(
+        '#include <common>',
+        '#include <common>\nvarying vec3 vMarsLocalPos;'
+      )
+      .replace(
+        '#include <begin_vertex>',
+        '#include <begin_vertex>\nvMarsLocalPos = position;'
+      );
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        '#include <common>',
+        '#include <common>\nvarying vec3 vMarsLocalPos;\nuniform vec3 uHoleDir;\nuniform float uHoleCos;'
+      )
+      .replace(
+        '#include <clipping_planes_fragment>',
+        'if (dot(normalize(vMarsLocalPos), uHoleDir) > uHoleCos) discard;\n#include <clipping_planes_fragment>'
+      );
+  }, [holeUniforms]);
+
+  const holeOpen = viewMode !== VIEW_MODES.PLANET && Boolean(selectedCrater);
+
+  useEffect(() => {
+    if (holeOpen) {
+      holeUniforms.uHoleDir.value.set(...calculateCraterPosition(
+        selectedCrater.latitude,
+        selectedCrater.longitude,
+        1
+      ));
+      holeUniforms.uHoleCos.value = Math.cos(getCraterHoleAngle(selectedCrater));
+    } else {
+      holeUniforms.uHoleCos.value = 2;
+    }
+  }, [holeOpen, selectedCrater, holeUniforms]);
   
   // 使用 useTexture 替代 useLoader，并利用缓存
   useEffect(() => {
@@ -146,6 +196,7 @@ const Mars = ({
             normalMap={textureCache.normalMap}
             normalScale={new THREE.Vector2(0.42, 0.42)}
             roughness={0.92}
+            onBeforeCompile={injectHoleShader}
           />
         </mesh>
       )}
@@ -347,6 +398,9 @@ const MarsGlobe = ({
   hideMarsModel = false,
   viewMode = VIEW_MODES.PLANET,
   simulation,
+  farm,
+  selectedFarmTool,
+  onFarmPlotClick,
   selectedTuberUse,
   selectedIntervention,
   onPlantInZone,
@@ -361,6 +415,30 @@ const MarsGlobe = ({
   const planetControlsEnabled = (
     isInteractive && viewMode === VIEW_MODES.PLANET
   );
+
+  // 近景主光位置：沿选中坑地表切平面以 38 度仰角斜射，
+  // 保证任何纬度的坑都有一致的浮雕光照。
+  const closeLightPosition = useMemo(() => {
+    if (!selectedCrater) return null;
+
+    const normal = new THREE.Vector3(...calculateCraterPosition(
+      selectedCrater.latitude,
+      selectedCrater.longitude,
+      1
+    ));
+    const tangent = new THREE.Vector3(0, 1, 0).cross(normal);
+
+    if (tangent.lengthSq() < 0.01) tangent.set(1, 0, 0);
+    tangent.normalize();
+
+    const elevation = THREE.MathUtils.degToRad(38);
+
+    return normal
+      .multiplyScalar(Math.sin(elevation))
+      .add(tangent.multiplyScalar(Math.cos(elevation)))
+      .multiplyScalar(10)
+      .toArray();
+  }, [selectedCrater]);
 
   // 当外部传入的 selectedCrater 为 null 时，重置内部选中状态
   useEffect(() => {
@@ -381,16 +459,25 @@ const MarsGlobe = ({
 
   return (
     <>
-      <ambientLight intensity={isCloseView ? 1.35 : 3} />
-      <pointLight
-        position={[10, 10, 10]}
-        intensity={isCloseView ? 0.55 : 1}
-      />
-      <Mars 
-        craters={craters} 
+      {/* 近景：低环境光 + 斜射方向光。旧值 ambient 1.35 压倒方向光，
+          地形起伏没有明暗层次（灌白光）。方向光沿选中坑的地表切向
+          以约 38 度仰角斜射，每个坑都有浮雕感，且方向随坑连续。 */}
+      <ambientLight intensity={isCloseView ? 0.45 : 3} />
+      {isCloseView && closeLightPosition ? (
+        <directionalLight
+          position={closeLightPosition}
+          intensity={1.1}
+          color="#ffdfc0"
+        />
+      ) : (
+        <pointLight position={[10, 10, 10]} intensity={1} />
+      )}
+      <Mars
+        craters={craters}
         onCraterClick={(crater, index) => handleCraterClick(crater, index)}
         selectedId={selectedId}
-        showLines={showLines} 
+        selectedCrater={selectedCrater}
+        showLines={showLines}
         isDarkMode={isDarkMode}
         isInteractive={isInteractive && viewMode === VIEW_MODES.PLANET}
         initialPosition={initialPosition}
@@ -399,21 +486,27 @@ const MarsGlobe = ({
         viewMode={viewMode}
       >
         {selectedCrater
-          && simulation
           && (
             viewMode === VIEW_MODES.CRATER
             || viewMode === VIEW_MODES.HUMAN
-          ) && (
-          <CraterCultivationScene
-            crater={selectedCrater}
-            simulation={simulation}
-            selectedUse={selectedTuberUse}
-            selectedIntervention={selectedIntervention}
-            onPlantInZone={onPlantInZone}
-            onAssignTuber={onAssignTuber}
-            onApplyIntervention={onApplyIntervention}
-          />
-        )}
+          ) && (farm ? (
+            <FarmScene
+              crater={selectedCrater}
+              farm={farm}
+              selectedTool={selectedFarmTool}
+              onPlotAction={onFarmPlotClick}
+            />
+          ) : simulation && (
+            <CraterCultivationScene
+              crater={selectedCrater}
+              simulation={simulation}
+              selectedUse={selectedTuberUse}
+              selectedIntervention={selectedIntervention}
+              onPlantInZone={onPlantInZone}
+              onAssignTuber={onAssignTuber}
+              onApplyIntervention={onApplyIntervention}
+            />
+          ))}
       </Mars>
       <WorldCameraRig
         controlsRef={controlsRef}
