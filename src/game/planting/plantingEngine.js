@@ -55,7 +55,10 @@ const getCraterId = (crater) => crater?.id || crater?.CRATER_ID || 'UNKNOWN';
 export const deriveCraterEnvironment = (crater) => {
   const latitude = Math.abs(toNumber(crater?.latitude ?? crater?.LAT_CIRC_IMG));
   const diameter = toNumber(crater?.diameter ?? crater?.DIAM_CIRC_IMG, 10);
-  const layerNumber = toNumber(crater?.layerNumber ?? crater?.NUMBER_LAYERS, 1);
+  // CSV 的列名是 LAY_NUMBER。旧代码回退读 NUMBER_LAYERS —— 该列不存在，
+  // 直接传原始行的调用方会静默拿到 layerNumber=1，一次性压平
+  // water / geologicalComplexity / instability / layerDiversity 四项。
+  const layerNumber = toNumber(crater?.layerNumber ?? crater?.LAY_NUMBER, 1);
   const rim = toNumber(crater?.rimDegradation ?? crater?.DEG_RIM, 2);
   const ejecta = toNumber(crater?.ejectaDegradation ?? crater?.DEG_EJC, 2);
   const floor = toNumber(crater?.floorDegradation ?? crater?.DEG_FLR, 2);
@@ -63,14 +66,54 @@ export const deriveCraterEnvironment = (crater) => {
   const hasRadiation = crater?.hasRd === true || crater?.hasRd === 1;
   const degradation = clamp(((rim + ejecta + floor) / 12) * 100, 0, 100);
 
+  // 连续量补正项。上面的四项全部派生自 1-4 的小整数列，实测 101 个坑
+  // 只散出 4-11 个不同值 —— 坑与坑玩起来会明显雷同。下面这些列在同样
+  // 101 个坑上分别有 101/101/60/30 个不同值，加性叠加，不改变原有各项
+  // 的含义与量级基准。缺值时补正为 0，退化回旧行为。
+  const eccentricity = toNumber(crater?.eccentricity ?? crater?.DIAM_ELLI_ECCEN_IMG, 0);
+  const diameterSD = toNumber(crater?.diameterSD ?? crater?.DIAM_CIRC_SD_IMG, 0);
+  const rimPoints = toNumber(crater?.rimPoints ?? crater?.PTS_RIM_IMG, 0);
+  const lobeCount = toNumber(crater?.lobeCount ?? crater?.numLE_1, 0);
+  const arc = toNumber(crater?.arc ?? crater?.ARC_IMG, 1);
+  const isRampart = crater?.isRampart === true || crater?.isRampart === 1;
+  const isCircle = crater?.isCircle === true || crater?.isCircle === 1;
+  const ejectaShape = String(crater?.ejectaShape ?? crater?.ejc_shape_1 ?? '');
+  const floorMorph = Array.isArray(crater?.floorMorph)
+    ? crater.floorMorph.join(' ').toLowerCase()
+    : '';
+
   const environment = {
     cold: clamp(18 + (latitude / 90) * 82, 0, 100),
-    radiation: hasRadiation ? 88 : clamp(12 + degradation * 0.22, 0, 100),
+    radiation: hasRadiation
+      ? 88
+      : clamp(12 + degradation * 0.22 + diameterSD * 6, 0, 100),
     water: clamp(28 + (latitude / 90) * 44 + layerNumber * 4, 0, 100),
     minerals: morphology.match(/cpk|cpt|central|peak/) ? 82 : clamp(30 + diameter * 0.35, 0, 76),
-    geologicalComplexity: clamp(24 + layerNumber * 15 + (morphology ? 16 : 0), 0, 100),
-    instability: clamp(18 + degradation * 0.62 + Math.max(0, layerNumber - 2) * 5, 0, 100),
-    layerDiversity: clamp(24 + layerNumber * 22, 0, 100),
+    geologicalComplexity: clamp(
+      24 + layerNumber * 15 + (morphology ? 16 : 0) + (rimPoints / 262) * 22,
+      0,
+      100
+    ),
+    instability: clamp(
+      18 + degradation * 0.62 + Math.max(0, layerNumber - 2) * 5
+        + (1 - arc) * 60 + eccentricity * 28,
+      0,
+      100
+    ),
+    layerDiversity: clamp(
+      24 + layerNumber * 22 + lobeCount * 7 + (isRampart ? 9 : 0),
+      0,
+      100
+    ),
+    // 风暴遮蔽度：规整的圆坑、带梯坎的坑底、宽缓的溅射裙边都更能挡风。
+    // 让「坑缘有多危险」因坑而异，而不是所有坑共用一张伤害表。
+    shelter: clamp(
+      30 + (isCircle ? 18 : 0)
+        + (floorMorph.match(/terrac|gull|slump/) ? 20 : 0)
+        + (ejectaShape === 'BL' ? 12 : 0),
+      0,
+      100
+    ),
   };
 
   environment.pressure = Math.round(
@@ -86,7 +129,7 @@ export const deriveCraterEnvironment = (crater) => {
 };
 
 export const getPlantingLayerOptions = (crater) => {
-  const layerNumber = Math.max(1, toNumber(crater?.layerNumber ?? crater?.NUMBER_LAYERS, 1));
+  const layerNumber = Math.max(1, toNumber(crater?.layerNumber ?? crater?.LAY_NUMBER, 1));
 
   return [
     {
