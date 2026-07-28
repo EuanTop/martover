@@ -64,8 +64,6 @@ const AppRoutes = () => {
     colonyDeliverContract,
     colonyRestart,
     setClockSpeed,
-    toggleClockPaused,
-    skipToNextEvent,
   } = useGameSession();
 
   // 显示加载状态
@@ -117,8 +115,6 @@ const AppRoutes = () => {
                 onColonyDeliverContract={colonyDeliverContract}
                 onColonyRestart={colonyRestart}
                 onSetClockSpeed={setClockSpeed}
-                onToggleClock={toggleClockPaused}
-                onSkipToEvent={skipToNextEvent}
                 craterData={craterData?.available || []}
                 appReady={appReady}
               />

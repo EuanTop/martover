@@ -14,11 +14,9 @@ import {
   TUBER_USES,
   VIEW_MODES,
 } from '../simulation/breedingSimulation';
-import { getDecisionPoints } from '../economy/colonyEconomy';
 import {
   PLANTING_BED_ID,
   POTATO_STATUS,
-  SKIP_MAX_SOLS,
   SPEED_STEPS,
   TOOL_MODES,
 } from '../economy/colonyState';
@@ -299,158 +297,55 @@ describe('colony clock', () => {
     return reduce(state, GAME_SESSION_ACTIONS.BEGIN_BREEDING);
   };
 
-  it('starts paused at 1x so loading never consumes a SOL', () => {
+  it('waits at SOL 00 until the first accepted base command', () => {
     const state = startColony();
 
-    expect(state.colony.clock).toMatchObject({ paused: true, speed: 1 });
+    expect(state.colony.clock).toEqual({ started: false, speed: 1 });
+    expect(reduce(state, GAME_SESSION_ACTIONS.TICK)).toBe(state);
   });
 
-  it('clamps speed to the allowed steps and resumes on change', () => {
+  it('clamps speed to the allowed debug steps without starting the clock', () => {
     let state = startColony();
 
     state = reduce(state, GAME_SESSION_ACTIONS.COLONY_SET_SPEED, 4);
     expect(state.colony.clock.speed).toBe(4);
-    // 改倍速隐含「继续」，否则玩家点了 4x 却没反应。
-    expect(state.colony.clock.paused).toBe(false);
+    expect(state.colony.clock.started).toBe(false);
 
     state = reduce(state, GAME_SESSION_ACTIONS.COLONY_SET_SPEED, 99);
     expect(SPEED_STEPS).toContain(state.colony.clock.speed);
   });
 
-  it('toggles pause both ways', () => {
-    let state = startColony();
-    state = reduce(state, GAME_SESSION_ACTIONS.COLONY_TOGGLE_PAUSED);
-    expect(state.colony.clock.paused).toBe(false);
-    state = reduce(state, GAME_SESSION_ACTIONS.COLONY_TOGGLE_PAUSED);
-    expect(state.colony.clock.paused).toBe(true);
-  });
-
-  it('skips forward and always lands paused', () => {
-    const before = startColony();
-    const after = reduce(before, GAME_SESSION_ACTIONS.COLONY_SKIP_TO_EVENT);
-
-    expect(after.colony.sol).toBeGreaterThan(before.colony.sol);
-    expect(after.colony.sol - before.colony.sol)
-      .toBeLessThanOrEqual(SKIP_MAX_SOLS);
-    // 跳转的意义是把控制权交回玩家 —— 落地必须是暂停态。
-    expect(after.colony.clock.paused).toBe(true);
-  });
-
-  it('stops skipping at the first decision point', () => {
-    let state = startColony();
-    // 种一格，跳转应当停在成熟那一刻而不是一路跑满 15 SOL。
-    state = reduce(state, GAME_SESSION_ACTIONS.COLONY_CELL_ACTION, {
-      cellId: 'floor-0-0',
-      tool: TOOL_MODES.PLANT,
-    });
-
-    let guard = 0;
-    while (
-      !getDecisionPoints(state.colony).some((p) => p.urgency >= 2)
-      && guard < 10
-    ) {
-      state = reduce(state, GAME_SESSION_ACTIONS.COLONY_SKIP_TO_EVENT);
-      guard += 1;
-    }
-
-    expect(getDecisionPoints(state.colony).some((p) => p.urgency >= 2))
-      .toBe(true);
-  });
-
-  it('stops when construction completes instead of skipping over the factory', () => {
+  it('starts on the first accepted cell action and keeps running', () => {
     let state = startColony();
     state = reduce(state, GAME_SESSION_ACTIONS.COLONY_CELL_ACTION, {
       cellId: 'shadow-2-0',
       tool: TOOL_MODES.BUILD_EXTRACTOR,
     });
 
-    state = reduce(state, GAME_SESSION_ACTIONS.COLONY_SKIP_TO_EVENT);
+    expect(state.colony.clock.started).toBe(true);
+
+    state = reduce(state, GAME_SESSION_ACTIONS.TICK);
+    state = reduce(state, GAME_SESSION_ACTIONS.TICK);
 
     expect(state.colony.sol).toBe(2);
     expect(state.colony.bases['base-01'].cells.find(
       (cell) => cell.id === 'shadow-2-0'
     ).facility.completedSol).toBe(2);
+    expect(state.colony.clock.started).toBe(true);
   });
 
-  it('auto-pauses when construction completes during normal time', () => {
-    let state = startColony();
-    state = reduce(state, GAME_SESSION_ACTIONS.COLONY_CELL_ACTION, {
-      cellId: 'shadow-2-0',
-      tool: TOOL_MODES.BUILD_EXTRACTOR,
+  it('does not start after a rejected cell action', () => {
+    const state = startColony();
+    const rejected = reduce(state, GAME_SESSION_ACTIONS.COLONY_CELL_ACTION, {
+      cellId: 'rim-4-0',
+      tool: TOOL_MODES.PLANT,
     });
-    state = reduce(state, GAME_SESSION_ACTIONS.COLONY_SET_SPEED, 1);
 
-    state = reduce(state, GAME_SESSION_ACTIONS.TICK);
-    expect(state.colony.clock.paused).toBe(false);
-    state = reduce(state, GAME_SESSION_ACTIONS.TICK);
-
-    expect(state.colony.sol).toBe(2);
-    expect(state.colony.clock.paused).toBe(true);
+    expect(rejected).toBe(state);
+    expect(rejected.colony.clock.started).toBe(false);
   });
 
-  it('stops before an open contract deadline', () => {
-    let state = startColony();
-    state = {
-      ...state,
-      colony: {
-        ...state.colony,
-        contracts: state.colony.contracts.map((contract, index) => (
-          index === 0 ? { ...contract, deadlineSol: 4 } : contract
-        )),
-        bases: {
-          ...state.colony.bases,
-          'base-01': {
-            ...state.colony.bases['base-01'],
-            hazards: {
-              ...state.colony.bases['base-01'].hazards,
-              storm: { index: 0, announceSol: 50, arriveSol: 54 },
-            },
-          },
-        },
-      },
-    };
-
-    state = reduce(state, GAME_SESSION_ACTIONS.COLONY_SKIP_TO_EVENT);
-
-    expect(state.colony.sol).toBe(3);
-    expect(getDecisionPoints(state.colony)).toContainEqual(
-      expect.objectContaining({ kind: 'contract-deadline', remaining: 1 })
-    );
-  });
-
-  it('cannot skip through a contract on its deadline', () => {
-    let state = startColony();
-    state = {
-      ...state,
-      colony: {
-        ...state.colony,
-        sol: 4,
-        clock: { ...state.colony.clock, paused: false },
-        contracts: state.colony.contracts.map((contract, index) => (
-          index === 0 ? { ...contract, deadlineSol: 4 } : contract
-        )),
-      },
-    };
-
-    state = reduce(state, GAME_SESSION_ACTIONS.COLONY_SKIP_TO_EVENT);
-
-    expect(state.colony.sol).toBe(4);
-    expect(state.colony.outcome).toBeNull();
-    expect(state.colony.clock.paused).toBe(true);
-  });
-
-  it('never skips past the end of a run', () => {
-    const finished = {
-      ...startColony(),
-    };
-    finished.colony = { ...finished.colony, outcome: 'lost' };
-
-    expect(reduce(finished, GAME_SESSION_ACTIONS.COLONY_SKIP_TO_EVENT))
-      .toBe(finished);
-  });
-
-  it('auto-pauses on an urgent decision point, then re-arms once clear', () => {
-    // 自动暂停让节奏由决策密度决定，而不是靠玩家盯着时钟。
+  it('continues through urgent resource states without hidden pausing', () => {
     let state = startColony();
     const patchStores = (s, stores) => ({
       ...s,
@@ -468,25 +363,13 @@ describe('colony clock', () => {
 
     // 没作物、没种薯但手上有块茎：可恢复，但需要玩家立刻决策。
     state = patchStores(state, { seedStock: 0, tubers: 8 });
-    state = reduce(state, GAME_SESSION_ACTIONS.TICK);
-
-    expect(state.colony.outcome).toBeNull();
-    expect(state.colony.clock.paused).toBe(true);
-    expect(state.colony.clock.autoPauseArmed).toBe(false);
-
-    // 紧急状态未解除时不再反复暂停（否则每 SOL 都打断玩家）。
-    state = { ...state, colony: { ...state.colony, clock: { ...state.colony.clock, paused: false } } };
-    state = reduce(state, GAME_SESSION_ACTIONS.TICK);
-    expect(state.colony.clock.paused).toBe(false);
-
-    // 解除紧急（补上种薯并种下）后重新武装。
-    state = patchStores(state, { seedStock: 4 });
     state = reduce(state, GAME_SESSION_ACTIONS.COLONY_CELL_ACTION, {
-      cellId: 'floor-0-0',
-      tool: TOOL_MODES.PLANT,
+      cellId: 'shadow-2-0',
+      tool: TOOL_MODES.BUILD_EXTRACTOR,
     });
     state = reduce(state, GAME_SESSION_ACTIONS.TICK);
 
-    expect(state.colony.clock.autoPauseArmed).toBe(true);
+    expect(state.colony.outcome).toBeNull();
+    expect(state.colony.clock.started).toBe(true);
   });
 });

@@ -1,10 +1,3 @@
-// 基地场景：26 格晶格、设施简模、点击执行当前工具。
-// 地形、碎石与植株全部复用 CraterCultivationScene 的构建器，
-// 保证经营视图与育种视图是同一个坑。
-//
-// 布局来自 economy/baseLayout 的推导式晶格。旧实现用 id → 弧度的
-// 硬编码表且无回退，未知 id 会得到 NaN 坐标并静默消失。
-
 import React, { useEffect, useMemo, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Billboard, Text } from '@react-three/drei';
@@ -21,6 +14,7 @@ import {
   getCraterDisplayScale,
   getCraterMountRadius,
 } from './craterVisualModel';
+import { TERRAIN_RADIUS } from './terrainBands';
 import SuperPotato, { PLANT_LABEL_HEIGHT } from './SuperPotato';
 import FacilityModel from './FacilityModels';
 import FactoryConnections from './FactoryConnections';
@@ -29,109 +23,150 @@ import { createCellLattice } from '../economy/baseLayout';
 import { canApplyTool } from '../economy/colonyEconomy';
 import {
   FACILITY_SPECS,
-  FACILITY_TYPES,
-  getZoneSpec,
+  PLANTING_BED_ID,
   POTATO_STATUS,
+  getZoneSpec,
 } from '../economy/colonyState';
 import { useCursorStore } from '../../store';
 
-// 标签只在需要时渲染，避免 26 个常驻 troika Text 互相重叠。
-const LABEL_FONT_SIZE = 0.016;
+const LABEL_FONT_SIZE = 0.017;
+const GRID_PITCH = TERRAIN_RADIUS * 0.4;
+const GRID_CELL_SIZE = GRID_PITCH * 0.78;
+const FACTORY_RADIUS = GRID_CELL_SIZE * 0.39;
 
-// 规则层的 footprintRadius 只负责格间无碰撞，不能直接当建筑视觉尺寸。
-// 工厂模型按环带获得稳定体量：越靠外可用空间越大，建筑也更高、更清楚。
-const getFactoryVisualRadius = (layout) => {
-  const ringRadii = [0.13, 0.075, 0.095, 0.105, 0.115];
-  return ringRadii[layout.ring] || Math.max(layout.footprintRadius, 0.075);
-};
+// 7x7 方格的外环恰好提供 24 个建筑位，再在近侧中央追加一个
+// 总线位。视觉网格围住坑体但不侵入坑内，规则邻接仍由 baseLayout
+// 独立计算。
+const GRID_COORDINATES = Object.freeze([
+  ...Array.from({ length: 7 }, (_, index) => ({
+    column: index - 3,
+    row: -3,
+  })),
+  ...Array.from({ length: 6 }, (_, index) => ({
+    column: 3,
+    row: index - 2,
+  })),
+  ...Array.from({ length: 6 }, (_, index) => ({
+    column: 2 - index,
+    row: 3,
+  })),
+  ...Array.from({ length: 5 }, (_, index) => ({
+    column: -3,
+    row: 2 - index,
+  })),
+  { column: 0, row: 4 },
+].map(Object.freeze));
 
-const getCellTone = (cell, base) => {
-  if (!cell.cleared) return '#c8916a';
-  if (cell.isPlantingBed) {
-    if (base.potato?.status === POTATO_STATUS.READY) return '#ffd27f';
-    if (base.potato) return '#8fae6f';
-    return '#f0dcc0';
-  }
-  if (cell.facility) return '#c4a184';
-  return '#e8c9a8';
-};
+const createExteriorVisualLayouts = (cells, seed) => {
+  const layouts = new Map();
+  const floor = sampleTerrain(0, 0, seed);
+  const exteriorCells = cells.filter((cell) => cell.id !== PLANTING_BED_ID);
 
-const CellRing = ({ cell, base, radius }) => {
-  const ringRef = React.useRef();
-  const isReady = cell.isPlantingBed
-    && base.potato?.status === POTATO_STATUS.READY;
-
-  useFrame((state) => {
-    if (!ringRef.current) return;
-    ringRef.current.scale.setScalar(
-      isReady ? 1 + Math.sin(state.clock.elapsedTime * 3.2) * 0.06 : 1
-    );
+  layouts.set(PLANTING_BED_ID, {
+    ...cells.find((cell) => cell.id === PLANTING_BED_ID),
+    x: 0,
+    z: 0,
+    height: floor.height,
+    visualKind: 'cultivation-core',
   });
 
-  return (
-    <mesh ref={ringRef} position={[0, 0.006, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-      <ringGeometry args={[radius * 0.82, radius * 1.06, 28]} />
-      <meshBasicMaterial
-        color={getCellTone(cell, base)}
-        transparent
-        opacity={cell.cleared ? 0.92 : 0.7}
-        depthWrite={false}
-        side={THREE.DoubleSide}
-      />
-    </mesh>
-  );
+  exteriorCells.forEach((cell, index) => {
+    const { column, row } = GRID_COORDINATES[index];
+    const x = column * GRID_PITCH;
+    const z = row * GRID_PITCH;
+    const angle = Math.atan2(z, x);
+    const normalizedRadius = Math.hypot(x, z) / TERRAIN_RADIUS;
+    const plain = sampleTerrain(normalizedRadius, angle, seed);
+
+    layouts.set(cell.id, {
+      ...cell,
+      x,
+      z,
+      height: plain.height + 0.006,
+      gridColumn: column,
+      gridRow: row,
+      visualKind: 'factory-grid',
+    });
+  });
+
+  return layouts;
 };
 
-const FactoryPad = ({ cell, radius, dimmed }) => {
-  if (!cell.cleared) {
-    return (
-      <mesh position={[0, 0.006, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <ringGeometry args={[radius * 0.3, radius * 0.42, 20]} />
-        <meshBasicMaterial
-          color="#d7986f"
-          transparent
-          opacity={dimmed ? 0.055 : 0.17}
-          depthWrite={false}
-          side={THREE.DoubleSide}
-        />
-      </mesh>
-    );
-  }
+const IndustrialGrid = ({ layouts }) => {
+  const factoryLayouts = [...layouts.values()]
+    .filter((layout) => layout.visualKind === 'factory-grid');
+  if (factoryLayouts.length === 0) return null;
+
+  const coordinateMap = new Map(factoryLayouts.map((layout) => [
+    `${layout.gridColumn}|${layout.gridRow}`,
+    layout,
+  ]));
+  const links = factoryLayouts.flatMap((layout) => (
+    [
+      coordinateMap.get(`${layout.gridColumn + 1}|${layout.gridRow}`),
+      coordinateMap.get(`${layout.gridColumn}|${layout.gridRow + 1}`),
+    ].filter(Boolean).map((neighbour) => ({
+      key: `${layout.id}|${neighbour.id}`,
+      x: (layout.x + neighbour.x) / 2,
+      z: (layout.z + neighbour.z) / 2,
+      y: (layout.height + neighbour.height) / 2 + 0.003,
+      horizontal: layout.gridRow === neighbour.gridRow,
+    }))
+  ));
 
   return (
     <group>
-      <mesh position={[0, 0.009, 0]} receiveShadow>
-        <cylinderGeometry args={[radius * 0.82, radius * 0.92, 0.018, 24]} />
-        <meshStandardMaterial
-          color={cell.facility ? '#75442f' : '#8d553c'}
-          roughness={0.62}
-          metalness={0.32}
-          transparent
-          opacity={dimmed ? 0.48 : 0.94}
-        />
-      </mesh>
-      <mesh position={[0, 0.019, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <ringGeometry args={[radius * 0.57, radius * 0.72, 24]} />
-        <meshBasicMaterial
-          color={cell.facility ? '#e1a272' : '#c9845d'}
-          transparent
-          opacity={dimmed ? 0.18 : 0.52}
-          depthWrite={false}
-          side={THREE.DoubleSide}
-        />
-      </mesh>
-      {[0, Math.PI / 2].map((angle) => (
-        <mesh
-          key={angle}
-          position={[0, 0.021, 0]}
-          rotation={[-Math.PI / 2, 0, angle]}
+      {factoryLayouts.map((layout) => (
+        <group
+          key={layout.id}
+          position={[layout.x, layout.height - 0.002, layout.z]}
         >
-          <planeGeometry args={[radius * 1.2, 0.006]} />
-          <meshBasicMaterial
-            color="#f0bb91"
-            transparent
-            opacity={dimmed ? 0.1 : 0.38}
-            depthWrite={false}
+          <mesh raycast={() => null}>
+            <boxGeometry args={[GRID_CELL_SIZE, 0.014, GRID_CELL_SIZE]} />
+            <meshStandardMaterial
+              color="#633724"
+              roughness={0.74}
+              metalness={0.3}
+              transparent
+              opacity={0.82}
+            />
+          </mesh>
+          <mesh
+            position={[0, 0.008, 0]}
+            rotation={[-Math.PI / 2, 0, 0]}
+            raycast={() => null}
+          >
+            <ringGeometry
+              args={[GRID_CELL_SIZE * 0.39, GRID_CELL_SIZE * 0.47, 4]}
+            />
+            <meshBasicMaterial
+              color="#b76d48"
+              transparent
+              opacity={0.2}
+              depthWrite={false}
+              side={THREE.DoubleSide}
+              toneMapped={false}
+            />
+          </mesh>
+        </group>
+      ))}
+      {links.map((link) => (
+        <mesh
+          key={link.key}
+          position={[link.x, link.y, link.z]}
+          raycast={() => null}
+        >
+          <boxGeometry
+            args={[
+              link.horizontal ? GRID_PITCH - GRID_CELL_SIZE : 0.018,
+              0.012,
+              link.horizontal ? 0.018 : GRID_PITCH - GRID_CELL_SIZE,
+            ]}
+          />
+          <meshStandardMaterial
+            color="#70402c"
+            roughness={0.68}
+            metalness={0.38}
           />
         </mesh>
       ))}
@@ -139,148 +174,98 @@ const FactoryPad = ({ cell, radius, dimmed }) => {
   );
 };
 
-// 种植核心是整座工厂的汇点，不表现成普通建筑格。
-const PlantingBedMarker = ({ radius }) => (
-  <group>
-    <mesh position={[0, 0.008, 0]} receiveShadow>
-      <cylinderGeometry args={[radius * 0.76, radius * 0.9, 0.016, 32]} />
-      <meshStandardMaterial
-        color="#6c3d2b"
-        roughness={0.82}
-        metalness={0.18}
-      />
-    </mesh>
-    {[0.55, 0.76, 1].map((scale, index) => (
-      <mesh
-        key={scale}
-        position={[0, 0.019 + index * 0.001, 0]}
-        rotation={[-Math.PI / 2, 0, index * 0.38]}
-      >
-        <ringGeometry args={[radius * scale, radius * (scale + 0.055), 32]} />
-        <meshBasicMaterial
-          color={index === 2 ? '#ffe0b8' : '#d78b5a'}
-          transparent
-          opacity={index === 2 ? 0.55 : 0.34}
-          depthWrite={false}
-          side={THREE.DoubleSide}
-        />
-      </mesh>
-    ))}
-  </group>
-);
-
-// 工具选中时的可用格高亮环。
-const EligibleRing = ({ radius, onActivate }) => {
-  const ringRef = React.useRef();
-  const beamRef = React.useRef();
-  const beaconRef = React.useRef();
+const GridFace = ({ active, hovered, dimmed }) => {
+  const ref = React.useRef();
 
   useFrame((state) => {
-    if (!ringRef.current) return;
-    const wave = Math.sin(state.clock.elapsedTime * 4.4);
-    ringRef.current.rotation.z = state.clock.elapsedTime * 0.42;
-    ringRef.current.scale.setScalar(1 + wave * 0.045);
-    ringRef.current.material.opacity = 0.78 + wave * 0.16;
-    if (beamRef.current) {
-      beamRef.current.material.opacity = 0.2 + (wave + 1) * 0.075;
-    }
-    if (beaconRef.current) {
-      beaconRef.current.position.y = radius * (1.2 + wave * 0.12);
-      beaconRef.current.rotation.y += 0.018;
-    }
+    if (!ref.current || !active) return;
+    ref.current.material.opacity = 0.22
+      + Math.sin(state.clock.elapsedTime * 3.6) * 0.08;
   });
 
+  if (!active && !hovered) return null;
+
   return (
-    <group onClick={onActivate}>
-      <mesh position={[0, 0.024, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <circleGeometry args={[radius * 0.86, 28]} />
-        <meshBasicMaterial
-          color="#ffb16f"
-          transparent
-          opacity={0.22}
-          depthWrite={false}
-          side={THREE.DoubleSide}
-          blending={THREE.AdditiveBlending}
-        />
-      </mesh>
-      <mesh
-        ref={ringRef}
-        position={[0, 0.029, 0]}
-        rotation={[-Math.PI / 2, 0, 0]}
-      >
-        <ringGeometry args={[radius * 0.88, radius * 1.2, 32, 1, 0, Math.PI * 1.7]} />
-        <meshBasicMaterial
-          color="#fff0d6"
-          transparent
-          opacity={0.9}
-          depthWrite={false}
-          side={THREE.DoubleSide}
-          toneMapped={false}
-        />
-      </mesh>
-      <mesh ref={beamRef} position={[0, radius * 0.55, 0]}>
-        <cylinderGeometry args={[radius * 0.48, radius * 0.9, radius * 1.08, 24, 1, true]} />
-        <meshBasicMaterial
-          color="#ffc48d"
-          transparent
-          opacity={0.28}
-          depthWrite={false}
-          side={THREE.DoubleSide}
-          blending={THREE.AdditiveBlending}
-        />
-      </mesh>
-      {[0, Math.PI / 2, Math.PI, Math.PI * 1.5].map((angle) => (
-        <mesh
-          key={angle}
-          position={[
-            Math.cos(angle) * radius * 0.78,
-            radius * 0.42,
-            Math.sin(angle) * radius * 0.78,
-          ]}
-        >
-          <boxGeometry args={[radius * 0.055, radius * 0.78, radius * 0.055]} />
+    <>
+      <group position={[0, 0.014, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <mesh ref={ref}>
+          <planeGeometry args={[GRID_CELL_SIZE, GRID_CELL_SIZE]} />
           <meshBasicMaterial
-            color="#ffe4c2"
+            color={active ? '#ffd4ad' : '#c67b57'}
             transparent
-            opacity={0.82}
+            opacity={dimmed ? 0.035 : active ? 0.3 : 0.1}
+            depthWrite={false}
+            side={THREE.DoubleSide}
+            blending={active ? THREE.AdditiveBlending : THREE.NormalBlending}
             toneMapped={false}
           />
         </mesh>
-      ))}
-      <mesh ref={beaconRef} position={[0, radius * 1.2, 0]} rotation={[0, 0, Math.PI / 4]}>
-        <octahedronGeometry args={[radius * 0.16, 0]} />
-        <meshBasicMaterial
-          color="#fff4de"
-          transparent
-          opacity={0.95}
-          toneMapped={false}
-        />
-      </mesh>
-    </group>
+        {active && (
+          <mesh position={[0, 0, 0.001]}>
+            <ringGeometry
+              args={[GRID_CELL_SIZE * 0.41, GRID_CELL_SIZE * 0.49, 4]}
+            />
+            <meshBasicMaterial
+              color="#fff0dd"
+              transparent
+              opacity={0.78}
+              depthWrite={false}
+              side={THREE.DoubleSide}
+              blending={THREE.AdditiveBlending}
+              toneMapped={false}
+            />
+          </mesh>
+        )}
+      </group>
+      {active && (
+        <mesh position={[0, 0.074, 0]} raycast={() => null}>
+          <cylinderGeometry args={[0.009, 0.018, 0.12, 8]} />
+          <meshBasicMaterial
+            color="#fff1df"
+            transparent
+            opacity={0.62}
+            depthWrite={false}
+            blending={THREE.AdditiveBlending}
+            toneMapped={false}
+          />
+        </mesh>
+      )}
+    </>
   );
 };
 
-// 邻接覆盖盘：让「这座设施罩住了哪几格」在 3D 里直接可读，
-// 而不是只存在于数值里。
-const CoverageDisc = ({ radius, color }) => (
-  <mesh position={[0, 0.003, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-    <circleGeometry args={[radius * 1.5, 20]} />
-    <meshBasicMaterial
-      color={color}
-      transparent
-      opacity={0.13}
-      depthWrite={false}
-      side={THREE.DoubleSide}
-    />
-  </mesh>
-);
+const CoreSignal = ({ ready }) => {
+  const ref = React.useRef();
+
+  useFrame((state) => {
+    if (!ref.current) return;
+    ref.current.rotation.z = state.clock.elapsedTime * 0.16;
+    ref.current.material.opacity = ready
+      ? 0.62 + Math.sin(state.clock.elapsedTime * 3) * 0.2
+      : 0.2;
+  });
+
+  return (
+    <mesh ref={ref} position={[0, 0.014, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+      <ringGeometry args={[0.18, 0.188, 64, 1, 0, Math.PI * 1.68]} />
+      <meshBasicMaterial
+        color={ready ? '#fff1c9' : '#a65d3e'}
+        transparent
+        opacity={0.2}
+        depthWrite={false}
+        side={THREE.DoubleSide}
+        toneMapped={false}
+      />
+    </mesh>
+  );
+};
 
 const getCellCaption = (cell, base) => {
   if (!cell.cleared) return '待开垦';
   if (cell.isPlantingBed) {
     if (base.potato?.status === POTATO_STATUS.READY) return '可收获';
     if (base.potato) return `${Math.round(base.potato.growth)}%`;
-    return '种植床 · 空';
+    return '培育核心';
   }
   if (cell.facility) {
     const label = FACILITY_SPECS[cell.facility.type].label;
@@ -300,28 +285,20 @@ const ColonyCell = ({
 }) => {
   const setCursorType = useCursorStore((state) => state.setType);
   const [hovered, setHovered] = useState(false);
-  const interactionRadius = Math.max(
-    layout.footprintRadius * 1.35,
-    getFactoryVisualRadius(layout)
-  );
-  const visualRadius = getFactoryVisualRadius(layout);
   const eligible = selectedTool
     ? canApplyTool(colony, cell.id, selectedTool)
     : false;
   const dimmed = Boolean(selectedTool) && !eligible;
-  const isReady = cell.isPlantingBed
-    && base.potato?.status === POTATO_STATUS.READY;
-
-  // 标签按需渲染：26 个常驻 troika Text 太费，且在新尺寸下会重叠。
-  // 种植床永远显示 —— 它是全坑唯一的产出口。
-  const showLabel = hovered || eligible || isReady || cell.isPlantingBed;
+  const isCore = cell.id === PLANTING_BED_ID;
+  const isReady = isCore && base.potato?.status === POTATO_STATUS.READY;
+  const showLabel = hovered || eligible || isReady;
 
   return (
     <group
       position={[layout.x, layout.height + 0.004, layout.z]}
-      onClick={(event) => {
-        if (selectedTool && !eligible) return;
+      onPointerDown={(event) => {
         event.stopPropagation();
+        if (selectedTool && !eligible) return;
         onCellAction(cell.id);
       }}
       onPointerOver={(event) => {
@@ -334,85 +311,62 @@ const ColonyCell = ({
         setCursorType('default');
       }}
     >
-      {!cell.isPlantingBed && (
-        <FactoryPad cell={cell} radius={visualRadius} dimmed={dimmed} />
-      )}
-      <CellRing
-        cell={cell}
-        base={base}
-        radius={cell.isPlantingBed ? visualRadius : visualRadius * 0.94}
-      />
-      {cell.isPlantingBed && <PlantingBedMarker radius={visualRadius} />}
-      {eligible && (
-        <EligibleRing
-          radius={visualRadius}
-          onActivate={(event) => {
-            event.stopPropagation();
-            onCellAction(cell.id);
-          }}
-        />
-      )}
-
-      {cell.facility?.type === FACILITY_TYPES.SHIELD
-        && cell.facility.buildRemaining === 0 && (
-        <CoverageDisc radius={visualRadius} color="#cfe4f2" />
-      )}
-      {cell.facility?.type === FACILITY_TYPES.HEATER
-        && cell.facility.buildRemaining === 0 && (
-        <CoverageDisc radius={visualRadius} color="#ff9d55" />
-      )}
-
-      {/* 全坑唯一的那棵超级土豆。按坑半径标定，不受格子大小约束 ——
-          它是坑内的视觉主体，设施模型只有它的几十分之一。 */}
-      {cell.isPlantingBed && base.potato && (
-        <SuperPotato
-          growth={base.potato.growth}
-          quality={base.potato.quality}
-          seed={seed}
-        />
-      )}
-
-      {cell.facility && (
-        <FacilityModel
-          facility={cell.facility}
-          radius={visualRadius}
-          facilitiesIdle={base.facilitiesIdle}
-        />
+      {isCore ? (
+        <>
+          <CoreSignal ready={isReady} />
+          {base.potato && (
+            <SuperPotato
+              growth={base.potato.growth}
+              quality={base.potato.quality}
+              seed={seed}
+            />
+          )}
+        </>
+      ) : (
+        <>
+          <GridFace active={eligible} hovered={hovered} dimmed={dimmed} />
+          {cell.facility && (
+            <FacilityModel
+              facility={cell.facility}
+              radius={FACTORY_RADIUS}
+              facilitiesIdle={base.facilitiesIdle}
+            />
+          )}
+        </>
       )}
 
       {showLabel && (
         <Billboard
           position={[
             0,
-            // 种植床的标签要抬到植株之上，否则会被叶丛盖住。
-            cell.isPlantingBed && base.potato
+            isCore && base.potato
               ? PLANT_LABEL_HEIGHT
-              : visualRadius * 0.92 + 0.055,
+              : FACTORY_RADIUS * 1.45,
             0,
           ]}
         >
           <Text
-            fontSize={cell.isPlantingBed ? LABEL_FONT_SIZE * 1.8 : LABEL_FONT_SIZE}
-            color={cell.cleared ? '#fff4e8' : '#d8b294'}
+            fontSize={isCore ? LABEL_FONT_SIZE * 1.35 : LABEL_FONT_SIZE}
+            color="#fff0e2"
             outlineColor="#3f1d0d"
             outlineWidth={0.002}
             anchorX="center"
             anchorY="middle"
           >
-            {cell.isPlantingBed
+            {isCore
               ? getCellCaption(cell, base)
               : `${getZoneSpec(cell.zone).label} · ${getCellCaption(cell, base)}`}
           </Text>
         </Billboard>
       )}
 
-      {/* 命中区：必须保持 visible（three 射线检测跳过不可见物体，
-          旧写法 visible=false 让地块点击完全失效），用透明材质隐形。 */}
       <mesh
         rotation={[-Math.PI / 2, 0, 0]}
-        position={[0, 0.014, 0]}
+        position={[0, 0.012, 0]}
       >
-        <circleGeometry args={[interactionRadius * 1.1, 20]} />
+        {isCore
+          ? <circleGeometry args={[0.21, 28]} />
+          : <planeGeometry args={[GRID_PITCH, GRID_PITCH]} />}
         <meshBasicMaterial
           transparent
           opacity={0}
@@ -425,14 +379,14 @@ const ColonyCell = ({
 };
 
 const ColonyScene = ({ crater, colony, base, selectedTool, onCellAction }) => {
-  const seed = useMemo(() => getCraterSeed(crater), [crater.id]);
+  const seed = useMemo(() => getCraterSeed(crater), [crater]);
   const displayScale = useMemo(
     () => getCraterDisplayScale(crater),
-    [crater.id]
+    [crater]
   );
   const mountRadius = useMemo(
     () => getCraterMountRadius(crater),
-    [crater.id]
+    [crater]
   );
   const position = useMemo(() => (
     new THREE.Vector3(...calculateCraterPosition(
@@ -449,23 +403,14 @@ const ColonyScene = ({ crater, colony, base, selectedTool, onCellAction }) => {
   ), [position]);
   const terrainGeometry = useMemo(
     () => createCraterTerrainGeometry(crater),
-    [crater.id]
+    [crater]
   );
   const blendTexture = useMemo(() => createBlendTexture(seed), [seed]);
   const detailTexture = useMemo(() => createRockDetailTexture(seed), [seed]);
-
-  // 晶格按基地种子推导一次，再按 id 与状态里的格子配对。
-  // 地形采样用坑的 seed，与地形网格本身保持一致。
-  const layouts = useMemo(() => {
-    const map = new Map();
-    createCellLattice(base.seed).forEach((cell) => {
-      map.set(cell.id, {
-        ...cell,
-        ...sampleTerrain(cell.normalizedRadius, cell.angle, seed),
-      });
-    });
-    return map;
-  }, [base.seed, seed]);
+  const layouts = useMemo(
+    () => createExteriorVisualLayouts(createCellLattice(base.seed), seed),
+    [base.seed, seed]
+  );
 
   useEffect(() => () => {
     terrainGeometry.dispose();
@@ -490,6 +435,7 @@ const ColonyScene = ({ crater, colony, base, selectedTool, onCellAction }) => {
       </mesh>
 
       <CraterDebris seed={seed} />
+      <IndustrialGrid layouts={layouts} />
       <FactoryConnections base={base} layouts={layouts} />
 
       {base.cells.map((cell) => {

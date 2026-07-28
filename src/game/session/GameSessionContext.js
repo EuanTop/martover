@@ -24,10 +24,10 @@ export const GameSessionProvider = ({ children }) => {
   const [state, dispatch] = useReducer(gameSessionReducer, initialGameSessionState);
 
   useEffect(() => {
-    // 经营模式：基地存活且未暂停时 SOL 连续流动，周期随倍速缩短。
+    // 镜头落位时仍处于整备态；首个有效基地操作后连续运行。
     const clock = state.colony?.clock;
     const colonyRunning = state.colony && !state.colony.outcome
-      && clock && !clock.paused;
+      && clock?.started;
     const breedingRunning = (
       state.simulation?.stage === BREEDING_STAGES.GROWING
       && state.simulation.sol < GENERATION_LENGTH_SOLS
@@ -43,7 +43,7 @@ export const GameSessionProvider = ({ children }) => {
     return () => window.clearInterval(timer);
   }, [
     state.colony?.outcome,
-    state.colony?.clock.paused,
+    state.colony?.clock.started,
     state.colony?.clock.speed,
     Boolean(state.colony),
     state.simulation?.stage,
@@ -122,14 +122,6 @@ export const GameSessionProvider = ({ children }) => {
     dispatch({ type: GAME_SESSION_ACTIONS.COLONY_SET_SPEED, payload: speed });
   }, []);
 
-  const toggleClockPaused = useCallback(() => {
-    dispatch({ type: GAME_SESSION_ACTIONS.COLONY_TOGGLE_PAUSED });
-  }, []);
-
-  const skipToNextEvent = useCallback(() => {
-    dispatch({ type: GAME_SESSION_ACTIONS.COLONY_SKIP_TO_EVENT });
-  }, []);
-
   const resetSession = useCallback(() => {
     dispatch({ type: GAME_SESSION_ACTIONS.RESET });
   }, []);
@@ -152,8 +144,6 @@ export const GameSessionProvider = ({ children }) => {
     colonyDeliverContract,
     colonyRestart,
     setClockSpeed,
-    toggleClockPaused,
-    skipToNextEvent,
     resetSession,
   }), [
     selectCrater,
@@ -171,8 +161,6 @@ export const GameSessionProvider = ({ children }) => {
     colonyDeliverContract,
     colonyRestart,
     setClockSpeed,
-    toggleClockPaused,
-    skipToNextEvent,
     resetSession,
   ]);
 

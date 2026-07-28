@@ -11,17 +11,16 @@ import * as THREE from 'three';
 import PotatoSpecimen from '../../Components/PotatoSpecimen/PotatoSpecimen';
 
 const MODEL_PATH = '/models/basic-human/scene.gltf';
-const ARM_DROP = 1;
 
 const boneNames = Object.freeze({
-  spine: 'mixamorigSpine2_04',
-  head: 'mixamorigHead_06',
-  leftArm: 'mixamorigLeftArm_09',
-  rightArm: 'mixamorigRightArm_033',
-  leftForeArm: 'mixamorigLeftForeArm_010',
-  rightForeArm: 'mixamorigRightForeArm_034',
-  leftLeg: 'mixamorigLeftUpLeg_056',
-  rightLeg: 'mixamorigRightUpLeg_060',
+  spine: 'mixamorig:Spine2_04',
+  head: 'mixamorig:Head_06',
+  leftArm: 'mixamorig:LeftArm_09',
+  rightArm: 'mixamorig:RightArm_033',
+  leftForeArm: 'mixamorig:LeftForeArm_010',
+  rightForeArm: 'mixamorig:RightForeArm_034',
+  leftLeg: 'mixamorig:LeftUpLeg_056',
+  rightLeg: 'mixamorig:RightUpLeg_060',
 });
 
 const regionVisuals = Object.freeze({
@@ -74,12 +73,17 @@ const HumanFigure = ({ human, phase }) => {
   const normalizationRef = useRef();
   const figureRef = useRef();
   const bonesRef = useRef({});
-  const baseRotationsRef = useRef({});
+  const baseQuaternionsRef = useRef({});
   const materialsRef = useRef([]);
+  const poseScratchRef = useRef({
+    euler: new THREE.Euler(),
+    offset: new THREE.Quaternion(),
+    target: new THREE.Quaternion(),
+  });
 
   useLayoutEffect(() => {
     const bones = {};
-    const baseRotations = {};
+    const baseQuaternions = {};
     const materials = [];
 
     model.traverse((object) => {
@@ -105,21 +109,9 @@ const HumanFigure = ({ human, phase }) => {
 
       if (object.isBone) {
         bones[object.name] = object;
-        baseRotations[object.name] = object.rotation.clone();
+        baseQuaternions[object.name] = object.quaternion.clone();
       }
     });
-
-    const setInitialPose = (name, x, y, z) => {
-      const bone = bones[name];
-      const origin = baseRotations[name];
-      if (!bone || !origin) return;
-      bone.rotation.set(origin.x + x, origin.y + y, origin.z + z);
-    };
-
-    setInitialPose(boneNames.leftArm, ARM_DROP, 0, 0);
-    setInitialPose(boneNames.rightArm, ARM_DROP, 0, 0);
-    setInitialPose(boneNames.leftForeArm, -0.08, 0.03, 0.04);
-    setInitialPose(boneNames.rightForeArm, -0.08, -0.03, -0.04);
 
     const bounds = collectSkinnedBounds(model);
     const size = bounds.getSize(new THREE.Vector3());
@@ -134,7 +126,7 @@ const HumanFigure = ({ human, phase }) => {
     );
 
     bonesRef.current = bones;
-    baseRotationsRef.current = baseRotations;
+    baseQuaternionsRef.current = baseQuaternions;
     materialsRef.current = materials;
 
     return () => {
@@ -145,7 +137,7 @@ const HumanFigure = ({ human, phase }) => {
   useFrame((state, delta) => {
     const time = state.clock.elapsedTime;
     const bones = bonesRef.current;
-    const base = baseRotationsRef.current;
+    const base = baseQuaternionsRef.current;
     const response = human.lastResponse;
     const reacting = phase === 'reacting' || phase === 'revealed';
     const responseAmount = reacting
@@ -158,118 +150,97 @@ const HumanFigure = ({ human, phase }) => {
       )
       : 0;
 
-    const setBoneRotation = (name, x, y, z, damping = 7) => {
+    const setBonePose = (name, x = 0, y = 0, z = 0, damping = 7) => {
       const bone = bones[name];
       const origin = base[name];
       if (!bone || !origin) return;
 
-      bone.rotation.x = THREE.MathUtils.damp(
-        bone.rotation.x,
-        origin.x + x,
-        damping,
-        delta
-      );
-      bone.rotation.y = THREE.MathUtils.damp(
-        bone.rotation.y,
-        origin.y + y,
-        damping,
-        delta
-      );
-      bone.rotation.z = THREE.MathUtils.damp(
-        bone.rotation.z,
-        origin.z + z,
-        damping,
-        delta
+      const scratch = poseScratchRef.current;
+      scratch.euler.set(x, y, z, 'XYZ');
+      scratch.offset.setFromEuler(scratch.euler);
+      scratch.target.copy(origin).multiply(scratch.offset);
+      bone.quaternion.slerp(
+        scratch.target,
+        1 - Math.exp(-damping * delta)
       );
     };
 
     const trait = response?.trait;
-    const isDormant = trait === 'dormancy' && reacting;
-    const isConductive = trait === 'conductivity' && reacting;
-    const isOriented = trait === 'orientation' && reacting;
-    const isRepairing = trait === 'repair' && reacting;
-    const twitch = isConductive ? Math.sin(time * 19) * 0.11 : 0;
-    const dormantDrop = isDormant ? responseAmount * 0.075 : 0;
-    const repairLift = isRepairing ? responseAmount * 0.045 : 0;
+    const amount = reacting ? responseAmount : 0;
+    const pulse = Math.sin(time * 2.4);
+    const fastPulse = Math.sin(time * 12);
+    const pose = {
+      spine: [Math.sin(time * 0.9) * 0.008, 0, 0],
+      head: [0, Math.sin(time * 0.3) * 0.018, 0],
+      leftArm: [0, 0, 0],
+      rightArm: [0, 0, 0],
+      leftForeArm: [0, 0, 0],
+      rightForeArm: [0, 0, 0],
+      leftLeg: [0, 0, 0],
+      rightLeg: [0, 0, 0],
+      lift: 0,
+      lean: 0,
+    };
+
+    if (trait === 'repair') {
+      pose.spine[0] -= amount * 0.06;
+      pose.leftArm[2] += amount * 0.1;
+      pose.rightArm[2] -= amount * 0.1;
+      pose.leftForeArm[1] += amount * 0.16;
+      pose.rightForeArm[1] -= amount * 0.16;
+      pose.lift = amount * 0.025;
+    } else if (trait === 'dormancy') {
+      pose.spine[0] += amount * 0.11;
+      pose.head[0] += amount * 0.08;
+      pose.leftArm[2] -= amount * 0.06;
+      pose.rightArm[2] += amount * 0.06;
+      pose.lift = -amount * 0.045;
+      pose.lean = amount * 0.018;
+    } else if (trait === 'conductivity') {
+      pose.spine[2] += fastPulse * amount * 0.025;
+      pose.leftForeArm[2] += fastPulse * amount * 0.045;
+      pose.rightForeArm[2] -= fastPulse * amount * 0.045;
+    } else if (trait === 'orientation') {
+      pose.head[1] += pulse * amount * 0.16;
+      pose.head[2] += Math.sin(time * 1.3) * amount * 0.04;
+      pose.spine[1] += pulse * amount * 0.035;
+    } else if (trait === 'shielding') {
+      pose.leftArm[1] += amount * 0.08;
+      pose.rightArm[1] -= amount * 0.08;
+      pose.leftForeArm[1] += amount * 0.12;
+      pose.rightForeArm[1] -= amount * 0.12;
+    } else if (trait === 'perception') {
+      pose.head[0] -= amount * 0.045;
+      pose.head[1] += Math.sin(time * 1.7) * amount * 0.11;
+    } else if (trait === 'regulation') {
+      pose.spine[0] += pulse * amount * 0.025;
+      pose.leftArm[2] += pulse * amount * 0.035;
+      pose.rightArm[2] -= pulse * amount * 0.035;
+    } else if (trait === 'vigor') {
+      pose.leftArm[1] += pulse * amount * 0.07;
+      pose.rightArm[1] -= pulse * amount * 0.07;
+      pose.leftLeg[0] -= pulse * amount * 0.045;
+      pose.rightLeg[0] += pulse * amount * 0.045;
+      pose.lift = Math.abs(pulse) * amount * 0.025;
+    }
 
     if (figureRef.current) {
       figureRef.current.position.y = (
         Math.sin(time * 0.72) * 0.01
-        - dormantDrop
-        + repairLift
+        + pose.lift
       );
-      figureRef.current.rotation.y = (
-        Math.sin(time * 0.24) * 0.022
-        + (isOriented ? Math.sin(time * 1.35) * 0.055 : 0)
-      );
+      figureRef.current.rotation.y = Math.sin(time * 0.24) * 0.018;
       figureRef.current.rotation.z = THREE.MathUtils.damp(
         figureRef.current.rotation.z,
-        isDormant ? responseAmount * 0.018 : 0,
+        pose.lean,
         5,
         delta
       );
     }
 
-    setBoneRotation(
-      boneNames.leftArm,
-      ARM_DROP
-        - (isRepairing ? responseAmount * 0.42 : 0)
-        + (isDormant ? responseAmount * 0.16 : 0),
-      0,
-      twitch
-    );
-    setBoneRotation(
-      boneNames.rightArm,
-      ARM_DROP
-        - (isRepairing ? responseAmount * 0.42 : 0)
-        + (isDormant ? responseAmount * 0.16 : 0),
-      0,
-      -twitch
-    );
-    setBoneRotation(
-      boneNames.leftForeArm,
-      -0.08 + (isRepairing ? responseAmount * 0.92 : 0),
-      0.03,
-      0.04 + responseAmount * 0.05
-    );
-    setBoneRotation(
-      boneNames.rightForeArm,
-      -0.08 + (isRepairing ? responseAmount * 0.92 : 0),
-      -0.03,
-      -0.04 - responseAmount * 0.05
-    );
-    setBoneRotation(
-      boneNames.leftLeg,
-      isDormant ? responseAmount * 0.08 : 0.015,
-      0,
-      -0.025 + twitch * 0.25
-    );
-    setBoneRotation(
-      boneNames.rightLeg,
-      isDormant ? responseAmount * 0.04 : -0.015,
-      0,
-      0.025 - twitch * 0.25
-    );
-    setBoneRotation(
-      boneNames.spine,
-      Math.sin(time * 0.9) * 0.012
-        + (isDormant ? responseAmount * 0.21 : 0)
-        - (isRepairing ? responseAmount * 0.09 : 0),
-      0,
-      isConductive ? twitch * 0.2 : 0
-    );
-    setBoneRotation(
-      boneNames.head,
-      isDormant
-        ? responseAmount * 0.18
-        : -responseAmount * (isRepairing ? 0.07 : 0.025),
-      isOriented
-        ? Math.sin(time * 1.8) * 0.2
-        : Math.sin(time * 0.32) * 0.03 + twitch * 0.22,
-      isOriented
-        ? Math.sin(time * 1.2) * 0.065
-        : twitch * 0.18
-    );
+    Object.entries(boneNames).forEach(([key, name]) => {
+      setBonePose(name, ...pose[key]);
+    });
 
     materialsRef.current.forEach((material) => {
       material.emissiveIntensity = THREE.MathUtils.damp(
@@ -423,7 +394,6 @@ const SampleTransfer = ({ phase }) => {
 
 const HumanStage = ({ human, phase }) => (
   <>
-    <color attach="background" args={['#d86432']} />
     <ambientLight intensity={1.25} />
     <directionalLight
       position={[2.4, 3.4, 3.8]}
@@ -460,7 +430,11 @@ const HumanFeedbackScene = ({ human, phase }) => (
   <Canvas
     dpr={[1, 1.5]}
     camera={{ position: [0, 0.02, 4.35], fov: 31, near: 0.1, far: 20 }}
-    gl={{ alpha: false, antialias: true, powerPreference: 'high-performance' }}
+    gl={{
+      alpha: true,
+      antialias: true,
+      powerPreference: 'high-performance',
+    }}
   >
     <Suspense fallback={null}>
       <HumanStage human={human} phase={phase} />

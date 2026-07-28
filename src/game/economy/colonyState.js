@@ -257,13 +257,10 @@ export const COLD_SNAP_GROWTH_MULTIPLIER = 0.45;
 export const BLACKOUT_LOSS_SOLS = 8;
 
 // ─── 时钟 ─────────────────────────────────────────────────────
-// 节奏要求：玩家持续操作时一轮应在 15 分钟内走完。推论是等待必须
-// 可跳过，且节奏由玩家的决策密度门控 —— 所以时钟状态放在 reducer
-// 里（可测、可序列化），而不是组件的 useState。
+// 基地进入后先停在 SOL 00 的整备态；首个有效基地操作自动启动时钟，
+// 此后连续推进且没有玩家暂停入口。速度只用于开发调试。
 export const SOL_BASE_MS = 2400;
 export const SPEED_STEPS = Object.freeze([1, 2, 4]);
-// 单次「跳到下一节点」最多推进的 SOL 数：即使一路无事也要交还控制权。
-export const SKIP_MAX_SOLS = 15;
 
 const getCraterId = (crater) => crater?.id || crater?.CRATER_ID || 'unknown';
 
@@ -384,8 +381,7 @@ export const createBaseState = (crater, id) => {
 export const createColonyState = (crater) => ({
   schemaVersion: 2,
   sol: 0,
-  // 玩家先读懂第一步，再主动启动时间。基地加载与镜头过渡不能偷走 SOL。
-  clock: { paused: true, speed: 1, autoPauseArmed: true },
+  clock: { started: false, speed: 1 },
 
   activeBaseId: 'base-01',
   baseOrder: ['base-01'],

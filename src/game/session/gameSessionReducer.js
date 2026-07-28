@@ -25,14 +25,12 @@ import {
   convertTubersToSeeds,
   deliverContract,
   demolishCell,
-  getDecisionPoints,
   harvestCell,
   plantCell,
   repairFacility,
 } from '../economy/colonyEconomy';
 import {
   createColonyState,
-  SKIP_MAX_SOLS,
   SPEED_STEPS,
   TOOL_FACILITY,
   TOOL_MODES,
@@ -55,8 +53,6 @@ export const GAME_SESSION_ACTIONS = Object.freeze({
   COLONY_DELIVER_CONTRACT: 'game-session/colony-deliver-contract',
   COLONY_RESTART: 'game-session/colony-restart',
   COLONY_SET_SPEED: 'game-session/colony-set-speed',
-  COLONY_TOGGLE_PAUSED: 'game-session/colony-toggle-paused',
-  COLONY_SKIP_TO_EVENT: 'game-session/colony-skip-to-event',
   RESET: 'game-session/reset',
 });
 export const RUN_OUTCOMES = Object.freeze({
@@ -121,33 +117,11 @@ export const gameSessionReducer = (state, action) => {
 
     case GAME_SESSION_ACTIONS.TICK:
       if (state.colony) {
-        const colony = advanceColonySol(state.colony);
-
-        // 自动暂停：施工完成、可收获、灾害与资源危机都把控制权
-        // 交还玩家，让时间只跨过等待，不跨过决定。
-        // autoPauseArmed 在紧急集合清空后重新武装，避免持续状态
-        // （比如长期缺水）每个 SOL 都把游戏暂停一次。
-        const urgent = getDecisionPoints(colony).some((p) => p.urgency >= 2);
-
-        if (!urgent) {
-          return {
-            ...state,
-            colony: colony.clock.autoPauseArmed
-              ? colony
-              : { ...colony, clock: { ...colony.clock, autoPauseArmed: true } },
-          };
-        }
+        if (!state.colony.clock.started) return state;
 
         return {
           ...state,
-          colony: colony.clock.autoPauseArmed
-            ? {
-              ...colony,
-              clock: {
-                ...colony.clock, paused: true, speed: 1, autoPauseArmed: false,
-              },
-            }
-            : colony,
+          colony: advanceColonySol(state.colony),
         };
       }
       if (!state.simulation) return state;
@@ -169,55 +143,8 @@ export const gameSessionReducer = (state, action) => {
           ...state,
           colony: {
             ...state.colony,
-            clock: { ...state.colony.clock, speed, paused: false },
+            clock: { ...state.colony.clock, speed },
           },
-        };
-      }
-
-    case GAME_SESSION_ACTIONS.COLONY_TOGGLE_PAUSED:
-      if (!state.colony) return state;
-
-      return {
-        ...state,
-        colony: {
-          ...state.colony,
-          clock: {
-            ...state.colony.clock,
-            paused: !state.colony.clock.paused,
-          },
-        },
-      };
-
-    // 跳到下一个决策点。纯 reducer 循环，不是加快计时器 ——
-    // 等待可以跳过，但决策不会被跳过。
-    case GAME_SESSION_ACTIONS.COLONY_SKIP_TO_EVENT:
-      if (!state.colony || state.colony.outcome) return state;
-
-      {
-        const deadlineReached = getDecisionPoints(state.colony).some(
-          (point) => point.kind === 'contract-deadline' && point.remaining === 0
-        );
-        if (deadlineReached) {
-          return {
-            ...state,
-            colony: {
-              ...state.colony,
-              clock: { ...state.colony.clock, paused: true },
-            },
-          };
-        }
-
-        let colony = state.colony;
-
-        for (let step = 0; step < SKIP_MAX_SOLS; step += 1) {
-          colony = advanceColonySol(colony);
-          if (colony.outcome) break;
-          if (getDecisionPoints(colony).some((p) => p.urgency >= 2)) break;
-        }
-
-        return {
-          ...state,
-          colony: { ...colony, clock: { ...colony.clock, paused: true } },
         };
       }
 
@@ -244,7 +171,17 @@ export const gameSessionReducer = (state, action) => {
 
         // 操作被守卫拒绝时返回同一引用，此处一并保持 state 引用不变，
         // 让「这次点击没生效」在 React 层也不触发重渲染。
-        return colony === state.colony ? state : { ...state, colony };
+        if (colony === state.colony) return state;
+
+        return {
+          ...state,
+          colony: colony.clock.started
+            ? colony
+            : {
+              ...colony,
+              clock: { ...colony.clock, started: true },
+            },
+        };
       }
 
     case GAME_SESSION_ACTIONS.COLONY_CONVERT_SEEDS:

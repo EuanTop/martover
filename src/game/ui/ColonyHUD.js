@@ -230,9 +230,7 @@ const ColonyHUD = ({
   onConvertSeeds,
   onDeliverContract,
   onRestart,
-  onToggleClock,
   onSetClockSpeed,
-  onSkipToEvent,
 }) => {
   const [buildOpen, setBuildOpen] = useState(false);
   const [buildGroup, setBuildGroup] = useState(FACILITY_CATEGORIES.COLLECTION);
@@ -290,9 +288,9 @@ const ColonyHUD = ({
     const spec = FACILITY_SPECS[facilityType];
     if (base.stores.energy < spec.cost) return '：能量不足';
     if (spec.requiresCoreAdjacency) {
-      return '：先用「开垦」打开中央核心旁的坑底格';
+      return '：先开垦与培育管线相邻的工业格';
     }
-    return '：先开垦符合设施区位的空地';
+    return '：先开垦符合设施区位的工业格';
   })();
 
   return (
@@ -301,13 +299,15 @@ const ColonyHUD = ({
         <ClockControls
           clock={colony.clock}
           disabled={Boolean(colony.outcome)}
-          onToggle={onToggleClock}
           onSetSpeed={onSetClockSpeed}
-          onSkip={onSkipToEvent}
         />
         <div className={styles.solCell}>
           <span>基地时钟</span>
-          <strong>SOL {String(colony.sol).padStart(2, '0')}</strong>
+          <strong>
+            {colony.clock.started
+              ? `SOL ${String(colony.sol).padStart(2, '0')}`
+              : '等待指令'}
+          </strong>
         </div>
         <div className={styles.resourceCell}>
           <span>块茎</span>
@@ -430,14 +430,24 @@ const ColonyHUD = ({
 
       {latestLog && (
         <div className={`${styles.hud} ${styles.logLine}`}>
-          <span>SOL {latestLog.sol} · {latestLog.text}</span>
+          <span>
+            {colony.clock.started ? `SOL ${latestLog.sol}` : '整备'}
+            {' · '}
+            {latestLog.text}
+          </span>
+        </div>
+      )}
+
+      {!colony.clock.started && !activeDefinition && (
+        <div className={`${styles.hud} ${styles.toolHint}`}>
+          第一步：打开「建造」，选择采冰器，再点击坑外发亮的工业格。首个有效指令会启动基地时钟。
         </div>
       )}
 
       {activeDefinition && (
         <div className={`${styles.hud} ${styles.toolHint}`}>
           {eligibleCount > 0
-            ? `已选「${activeDefinition.label}」— 点击坑内发亮的地块执行（${eligibleCount} 格可用）`
+            ? `已选「${activeDefinition.label}」— 点击坑外发亮的工业格执行（${eligibleCount} 格可用）`
             : `「${activeDefinition.label}」当前没有可用地块${unavailableSuffix}`}
         </div>
       )}

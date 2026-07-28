@@ -1,11 +1,65 @@
 .hud {
   --ink: #562913;
-  --panel: rgba(245, 116, 53, 0.86);
+  --panel: rgba(219, 81, 33, 0.2);
+  --panel-strong: rgba(229, 91, 40, 0.34);
+  --radiation-line: rgba(255, 221, 197, 0.62);
   position: fixed;
   z-index: 60;
   color: var(--ink);
   pointer-events: auto;
   font-size: 12px;
+}
+
+.topBar,
+.forecast,
+.contractCard,
+.buildPalette,
+.humanMonitor,
+.toolbar,
+.factoryChain,
+.outcomePanel {
+  background-color: var(--panel);
+  background-image: repeating-linear-gradient(
+    0deg,
+    transparent 0,
+    transparent 4px,
+    rgba(255, 232, 214, 0.04) 5px
+  );
+  border: 1px solid rgba(86, 41, 19, 0.68);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 222, 198, 0.18),
+    inset 0 0 22px rgba(255, 184, 135, 0.08),
+    0 0 12px rgba(97, 34, 13, 0.1);
+  backdrop-filter: blur(9px) saturate(1.08);
+}
+
+.topBar::after,
+.forecast::after,
+.buildPalette::after,
+.humanMonitor::after,
+.toolbar::after,
+.factoryChain::after {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  border-top: 1px solid var(--radiation-line);
+  border-bottom: 1px solid rgba(255, 221, 197, 0.28);
+  clip-path: polygon(
+    0 0,
+    28% 0,
+    calc(28% + 5px) 4px,
+    calc(72% - 5px) 4px,
+    72% 0,
+    100% 0,
+    100% 100%,
+    72% 100%,
+    calc(72% - 5px) calc(100% - 4px),
+    calc(28% + 5px) calc(100% - 4px),
+    28% 100%,
+    0 100%
+  );
+  pointer-events: none;
+  opacity: 0.65;
 }
 
 /* 顶栏：SOL 与四种资源 */
@@ -17,9 +71,7 @@
   align-items: stretch;
   gap: 10px;
   padding: 8px 14px;
-  background: var(--panel);
-  border: 1px solid var(--ink);
-  backdrop-filter: blur(12px);
+  background-color: rgba(226, 85, 34, 0.24);
 }
 
 .solCell {
@@ -57,7 +109,7 @@
 }
 
 .resourceLow {
-  background: rgba(86, 41, 19, 0.9);
+  background: rgba(86, 41, 19, 0.64);
   color: #ffe3d1;
 }
 
@@ -152,9 +204,7 @@
 
 .contractCard {
   padding: 10px 12px;
-  background: var(--panel);
-  border: 1px solid var(--ink);
-  backdrop-filter: blur(12px);
+  background-color: rgba(224, 84, 34, 0.22);
 }
 
 .contractCard header {
@@ -239,9 +289,7 @@
   flex-direction: column;
   gap: 2px;
   padding: 8px 10px;
-  background: var(--panel);
-  border: 1px solid var(--ink);
-  backdrop-filter: blur(12px);
+  background-color: rgba(224, 84, 34, 0.17);
 }
 
 .rateRow {
@@ -297,9 +345,7 @@
   bottom: 22px;
   width: 276px;
   padding: 10px 12px;
-  background: var(--panel);
-  border: 1px solid var(--ink);
-  backdrop-filter: blur(12px);
+  background-color: var(--panel-strong);
   z-index: 66;
 }
 
@@ -361,9 +407,7 @@
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   padding: 9px;
-  background: rgba(245, 116, 53, 0.9);
-  border: 1px solid var(--ink);
-  backdrop-filter: blur(12px);
+  background-color: rgba(217, 73, 27, 0.2);
   overflow: hidden;
 }
 
@@ -371,7 +415,7 @@
   content: '';
   position: absolute;
   inset: 5px;
-  border: 1px solid rgba(86, 41, 19, 0.34);
+  border: 1px solid rgba(255, 222, 198, 0.42);
   clip-path: polygon(
     0 0,
     24% 0,
@@ -447,6 +491,7 @@
       transparent 19px,
       rgba(86, 41, 19, 0.08) 20px
     );
+  box-shadow: inset 0 0 24px rgba(91, 29, 10, 0.12);
 }
 
 .humanViewport > div:first-child {
@@ -474,7 +519,8 @@
   right: 6px;
   bottom: 5px;
   padding: 2px 4px;
-  background: rgba(245, 116, 53, 0.76);
+  background: rgba(102, 36, 15, 0.46);
+  color: #ffe8d7;
   font-family: monospace;
   font-size: 8px;
 }
@@ -528,9 +574,7 @@
   align-items: stretch;
   gap: 8px;
   padding: 10px 12px;
-  background: var(--panel);
-  border: 1px solid var(--ink);
-  backdrop-filter: blur(12px);
+  background-color: rgba(224, 84, 34, 0.22);
 }
 
 .toolButton {
@@ -541,7 +585,7 @@
   gap: 2px;
   padding: 8px 10px;
   border: 1px solid var(--ink);
-  background: rgba(242, 168, 136, 0.4);
+  background: rgba(255, 221, 197, 0.11);
   color: var(--ink);
   cursor: pointer;
   text-align: left;
@@ -608,7 +652,7 @@
   transform: translateX(-50%);
   max-width: min(640px, 90vw);
   padding: 7px 16px;
-  background: #ffe9da;
+  background: rgba(255, 233, 218, 0.78);
   border: 1px solid var(--ink);
   color: var(--ink);
   font-size: 13px;
@@ -626,9 +670,7 @@
   transform: translateX(-50%);
   min-width: min(520px, 88vw);
   padding: 8px 12px;
-  background: rgba(245, 116, 53, 0.9);
-  border: 1px solid var(--ink);
-  backdrop-filter: blur(12px);
+  background-color: rgba(224, 84, 34, 0.17);
   text-align: center;
 }
 
@@ -694,8 +736,7 @@
 .outcomePanel {
   width: min(430px, 86vw);
   padding: 28px 30px;
-  background: var(--panel);
-  border: 1px solid var(--ink);
+  background-color: rgba(229, 91, 40, 0.72);
   text-align: center;
 }
 
