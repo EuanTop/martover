@@ -184,12 +184,49 @@ const Mars = ({
     return { gridGeometry: geometry, labels };
   }, []);
 
+  const handleSurfaceClick = (event) => {
+    if (!isInteractive || !Array.isArray(craters) || craters.length === 0) {
+      return;
+    }
+
+    if (event.delta > 4) {
+      return;
+    }
+
+    event.stopPropagation();
+
+    const localPoint = groupRef.current
+      ? groupRef.current.worldToLocal(event.point.clone())
+      : event.point.clone();
+    const hitDirection = localPoint.normalize();
+    let nearestIndex = -1;
+    let nearestDot = -Infinity;
+
+    craters.forEach((crater, index) => {
+      const craterDirection = new THREE.Vector3(...calculateCraterPosition(
+        crater.latitude,
+        crater.longitude,
+        1
+      )).normalize();
+      const dot = hitDirection.dot(craterDirection);
+
+      if (dot > nearestDot) {
+        nearestDot = dot;
+        nearestIndex = index;
+      }
+    });
+
+    if (nearestIndex >= 0) {
+      onCraterClick?.(craters[nearestIndex], nearestIndex);
+    }
+  };
+
   if (!texturesLoaded) return null;
 
   return (
     <group ref={groupRef} position={initialPosition} scale={scale}>
       {!hideMarsModel && (
-        <mesh>
+        <mesh onClick={handleSurfaceClick}>
           <sphereGeometry args={[1, 96, 96]} />
           <meshStandardMaterial
             map={textureCache.marsTexture}
@@ -295,6 +332,11 @@ const Crater = ({
 }) => {
   
   const setCursorType = useCursorStore(state => state.setType);
+  const handleClick = (e) => {
+    e.stopPropagation();
+    onClick?.(e);
+  };
+
   const handlePointerOver = (e) => {
     e.stopPropagation();
     setCursorType('hover');
@@ -358,9 +400,22 @@ const Crater = ({
 
   return (
     <group>
+      <mesh
+        position={position}
+        onClick={handleClick}
+        onPointerOver={handlePointerOver}
+        onPointerOut={handlePointerOut}
+      >
+        <sphereGeometry args={[0.055, 12, 12]} />
+        <meshBasicMaterial
+          transparent
+          opacity={0}
+          depthWrite={false}
+        />
+      </mesh>
       <mesh 
         position={position}
-        onClick={onClick}
+        onClick={handleClick}
         onPointerOver={handlePointerOver}
         onPointerOut={handlePointerOut}
       >

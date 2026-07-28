@@ -12,21 +12,22 @@ import { deriveCraterEnvironment } from '../planting/plantingEngine';
 import { createCellLattice } from './baseLayout';
 
 export const FARM_ZONES = Object.freeze({
-  FLOOR: 'floor',
+  CORE: 'core',
+  INNER: 'inner',
+  FLOOR: 'inner',
   SHADOW: 'shadow',
   RIM: 'rim',
 });
 
-// 地块用途。旧实现用 LOCKED 状态锁死 4/6 的地块且只有一条解锁路径，
-// 三分之一的内容永远进不去。现在 26 格全部存在，靠「开垦」逐步展开。
+// 地块用途。2.3 原型不再让玩家先开垦小坑位：坑外工业平台开局展开，
+// 玩家直接在可见平台上搭生产链，后续扩展才会重新引入开拓成本。
 export const CELL_USES = Object.freeze({
   FACILITY: 'facility',
 });
 
-// 每个坑只有一块位于几何中心的种植核心，长一棵「超级土豆」。
-// 其余 25 格全部是设施位。中央相邻的七个位置留给根灌、热控与遮蔽，
-// 采集和加工设施向外展开，形成一座围绕单株作物运转的工厂。
-export const PLANTING_BED_ID = 'floor-0-0';
+// 每个坑只有一个位于几何中心的种植核心，长一棵「超级土豆」。
+// 建筑格全部在坑外工业平台上，培育设施通过 corePort 接入坑心主管线。
+export const PLANTING_BED_ID = 'core-0-0';
 
 export const POTATO_STATUS = Object.freeze({
   EMPTY: 'empty',
@@ -99,7 +100,7 @@ export const FACILITY_CATEGORIES = Object.freeze({
 });
 
 const ALL_ZONES = Object.freeze([
-  FARM_ZONES.FLOOR,
+  FARM_ZONES.INNER,
   FARM_ZONES.SHADOW,
   FARM_ZONES.RIM,
 ]);
@@ -115,7 +116,7 @@ export const FACILITY_SPECS = Object.freeze({
     buildSols: 2,
     waterPerSol: 4.2,
     allowedZones: Object.freeze([FARM_ZONES.SHADOW]),
-    hint: '从坑壁阴影层抽取水冰',
+    hint: '从坑外背阴冰脉接口抽取水冰',
   }),
   [FACILITY_TYPES.SIFTER]: Object.freeze({
     label: '矿物筛分机',
@@ -125,7 +126,7 @@ export const FACILITY_SPECS = Object.freeze({
     buildSols: 2,
     mineralPerSol: 2.4,
     allowedZones: Object.freeze([FARM_ZONES.SHADOW, FARM_ZONES.RIM]),
-    hint: '筛取营养合成所需矿物',
+    hint: '筛取坑外地质接口中的矿物',
   }),
   [FACILITY_TYPES.SOLAR]: Object.freeze({
     label: '光伏阵',
@@ -135,7 +136,7 @@ export const FACILITY_SPECS = Object.freeze({
     buildSols: 2,
     energyPerSol: 3,
     allowedZones: ALL_ZONES,
-    hint: '每 SOL +3 能量；坑缘 +30%、坑底 −25%、相邻光伏互相遮挡 −12%',
+    hint: '每 SOL +3 能量；外缘平台 +30%、相邻光伏互相遮挡 −12%',
   }),
   [FACILITY_TYPES.BATTERY]: Object.freeze({
     label: '蓄电组',
@@ -158,7 +159,7 @@ export const FACILITY_SPECS = Object.freeze({
     nutrientPerSol: 2.4,
     remoteEfficiency: 0.65,
     supplierAdjacencyBonus: 0.15,
-    allowedZones: Object.freeze([FARM_ZONES.FLOOR, FARM_ZONES.SHADOW]),
+    allowedZones: Object.freeze([FARM_ZONES.INNER, FARM_ZONES.SHADOW, FARM_ZONES.RIM]),
     hint: '把水与矿物合成为营养液',
   }),
   [FACILITY_TYPES.ROOT_FEEDER]: Object.freeze({
@@ -169,9 +170,9 @@ export const FACILITY_SPECS = Object.freeze({
     buildSols: 2,
     waterPerSol: 5,
     nutrientPerSol: 2,
-    requiresCoreAdjacency: true,
-    allowedZones: Object.freeze([FARM_ZONES.FLOOR]),
-    hint: '必须贴近中央核心，输送水与营养',
+    requiresCorePort: true,
+    allowedZones: Object.freeze([FARM_ZONES.INNER]),
+    hint: '接入坑心主管线，输送水与营养',
   }),
   [FACILITY_TYPES.HEATER]: Object.freeze({
     label: '热调节桩',
@@ -180,9 +181,9 @@ export const FACILITY_SPECS = Object.freeze({
     upkeep: 2.2,
     buildSols: 2,
     thermalPerSol: 0.65,
-    requiresCoreAdjacency: true,
-    allowedZones: Object.freeze([FARM_ZONES.FLOOR]),
-    hint: '必须贴近中央核心，稳定根区温度',
+    requiresCorePort: true,
+    allowedZones: Object.freeze([FARM_ZONES.INNER]),
+    hint: '接入坑心热交换线，稳定根区温度',
   }),
   [FACILITY_TYPES.SHIELD]: Object.freeze({
     label: '辐射遮蔽器',
@@ -191,18 +192,19 @@ export const FACILITY_SPECS = Object.freeze({
     upkeep: 1.5,
     buildSols: 3,
     stabilityPerSol: 0.7,
-    requiresCoreAdjacency: true,
-    allowedZones: Object.freeze([FARM_ZONES.FLOOR]),
-    hint: '必须贴近中央核心，抵御辐射与风暴',
+    requiresCorePort: true,
+    allowedZones: Object.freeze([FARM_ZONES.INNER]),
+    hint: '接入遮蔽投射线，抵御辐射与风暴',
   }),
 });
 
 // 区位基准。种植床固定在坑底，所以只有坑底这一档参与生长计算；
 // 坑壁与坑缘的差异改为体现在设施效率上（采冰器、光伏的区位加成）。
 const ZONE_SPECS = Object.freeze({
-  [FARM_ZONES.FLOOR]: Object.freeze({ label: '坑底' }),
-  [FARM_ZONES.SHADOW]: Object.freeze({ label: '坑壁阴影' }),
-  [FARM_ZONES.RIM]: Object.freeze({ label: '坑缘' }),
+  [FARM_ZONES.CORE]: Object.freeze({ label: '中央土豆' }),
+  [FARM_ZONES.INNER]: Object.freeze({ label: '培育接口' }),
+  [FARM_ZONES.SHADOW]: Object.freeze({ label: '背阴平台' }),
+  [FARM_ZONES.RIM]: Object.freeze({ label: '外缘平台' }),
 });
 
 export const getZoneSpec = (zone) => ZONE_SPECS[zone];
@@ -299,7 +301,7 @@ export const CONTRACT_LADDER = Object.freeze([
     label: '首批供给',
     resource: 'tubers',
     amount: 14,
-    deadlineSol: 26,
+    deadlineSol: 34,
     energyReward: 18,
     rewardText: '能量补给 +18',
   }),
@@ -333,27 +335,34 @@ export const createBaseState = (crater, id) => {
     seed,
     environment,
     growthFactor: getEnvironmentGrowthFactor(environment),
-    // 中央核心 + 25 个设施位。开局开放一个中央邻格和三个坑壁位：
-    // 坑壁位承载采冰、筛分、营养加工；中央邻格专门保留给培育设施。
-    // 这让第一条生产链不需要玩家先理解隐藏的格位冲突。
-    cells: createCellLattice(seed).map((cell) => ({
-      id: cell.id,
-      zone: cell.zone,
-      ring: cell.ring,
-      isPlantingBed: cell.id === PLANTING_BED_ID,
-      cleared: cell.id === PLANTING_BED_ID
-        || cell.id === 'floor-1-0'
-        || cell.id === 'shadow-2-0'
-        || cell.id === 'shadow-2-1'
-        || cell.id === 'shadow-2-2',
-      use: null,
-      facility: null,
-    })),
+    cells: [
+      {
+        id: PLANTING_BED_ID,
+        zone: FARM_ZONES.CORE,
+        ring: -1,
+        isPlantingBed: true,
+        cleared: true,
+        use: null,
+        facility: null,
+      },
+      ...createCellLattice(seed).map((cell) => ({
+        id: cell.id,
+        zone: cell.zone,
+        ring: cell.ring,
+        column: cell.column,
+        row: cell.row,
+        corePort: cell.corePort,
+        isPlantingBed: false,
+        cleared: true,
+        use: null,
+        facility: null,
+      })),
+    ],
     // 唯一的那棵超级土豆。null = 种植床空着。
     potato: null,
     stores: {
       water: 30,
-      energy: 30,
+      energy: 34,
       minerals: 0,
       nutrients: 0,
       tubers: 0,
@@ -394,7 +403,7 @@ export const createColonyState = (crater) => ({
 
   outcome: null,
   lossReason: null,
-  log: [{ sol: 0, text: '首舱着陆。TOVER 联盟的供给合约已生效。' }],
+  log: [{ sol: 0, text: '首舱着陆。坑外工业平台展开，中央土豆等待播种。' }],
 });
 
 export const getActiveBase = (colony) => colony?.bases?.[colony.activeBaseId];

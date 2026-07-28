@@ -23,7 +23,6 @@ import {
   getPotatoYield,
 } from '../economy/colonyEconomy';
 import {
-  CLEAR_COST,
   COLONY_OUTCOMES,
   FACILITY_CATEGORIES,
   FACILITY_STATUS,
@@ -41,12 +40,6 @@ import styles from './ColonyHUD.module.css';
 
 // 直接动作与建造动作分开：建造有 5 种，平铺会把工具栏挤爆。
 const directTools = Object.freeze([
-  {
-    tool: TOOL_MODES.CLEAR,
-    label: '开垦',
-    hint: `能量 ${CLEAR_COST}`,
-    icon: ToolOutlined,
-  },
   {
     tool: TOOL_MODES.PLANT,
     label: '种植',
@@ -287,10 +280,10 @@ const ColonyHUD = ({
     if (!facilityType) return '';
     const spec = FACILITY_SPECS[facilityType];
     if (base.stores.energy < spec.cost) return '：能量不足';
-    if (spec.requiresCoreAdjacency) {
-      return '：先开垦与培育管线相邻的工业格';
+    if (spec.requiresCorePort) {
+      return '：培育主管线接口不足';
     }
-    return '：先开垦符合设施区位的工业格';
+    return '：当前平台没有符合区位的空格';
   })();
 
   return (

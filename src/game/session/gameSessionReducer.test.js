@@ -66,8 +66,8 @@ describe('gameSessionReducer', () => {
     expect(state.colony).not.toBeNull();
     expect(state.simulation).toBeNull();
     expect(state.colony.contracts).toHaveLength(3);
-    // 26 格全部存在，不再有永久锁死的地块。
-    expect(state.colony.bases['base-01'].cells).toHaveLength(26);
+    // 1 个中央土豆核心 + 62 个坑外工厂格，开局不再靠手动开垦推进。
+    expect(state.colony.bases['base-01'].cells).toHaveLength(63);
   });
 
   it('advances the colony clock and plants the single super potato', () => {
@@ -101,9 +101,8 @@ describe('gameSessionReducer', () => {
     );
     state = reduce(state, GAME_SESSION_ACTIONS.BEGIN_BREEDING);
 
-    // rim-4-0 未开垦，不能直接播种。
     const rejected = reduce(state, GAME_SESSION_ACTIONS.COLONY_CELL_ACTION, {
-      cellId: 'rim-4-0',
+      cellId: 'factory-0--2',
       tool: TOOL_MODES.PLANT,
     });
 
@@ -318,7 +317,7 @@ describe('colony clock', () => {
   it('starts on the first accepted cell action and keeps running', () => {
     let state = startColony();
     state = reduce(state, GAME_SESSION_ACTIONS.COLONY_CELL_ACTION, {
-      cellId: 'shadow-2-0',
+      cellId: 'factory-0--2',
       tool: TOOL_MODES.BUILD_EXTRACTOR,
     });
 
@@ -329,7 +328,7 @@ describe('colony clock', () => {
 
     expect(state.colony.sol).toBe(2);
     expect(state.colony.bases['base-01'].cells.find(
-      (cell) => cell.id === 'shadow-2-0'
+      (cell) => cell.id === 'factory-0--2'
     ).facility.completedSol).toBe(2);
     expect(state.colony.clock.started).toBe(true);
   });
@@ -337,7 +336,7 @@ describe('colony clock', () => {
   it('does not start after a rejected cell action', () => {
     const state = startColony();
     const rejected = reduce(state, GAME_SESSION_ACTIONS.COLONY_CELL_ACTION, {
-      cellId: 'rim-4-0',
+      cellId: 'factory-0--2',
       tool: TOOL_MODES.PLANT,
     });
 
@@ -364,7 +363,7 @@ describe('colony clock', () => {
     // 没作物、没种薯但手上有块茎：可恢复，但需要玩家立刻决策。
     state = patchStores(state, { seedStock: 0, tubers: 8 });
     state = reduce(state, GAME_SESSION_ACTIONS.COLONY_CELL_ACTION, {
-      cellId: 'shadow-2-0',
+      cellId: 'factory-0--2',
       tool: TOOL_MODES.BUILD_EXTRACTOR,
     });
     state = reduce(state, GAME_SESSION_ACTIONS.TICK);

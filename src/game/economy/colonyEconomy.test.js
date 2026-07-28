@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { getNeighbourIds } from './baseLayout';
 import {
   advanceColonySol,
   buildFacility,
@@ -25,7 +24,6 @@ import {
 import {
   BASE_WATER_RECLAIM,
   BLACKOUT_LOSS_SOLS,
-  CLEAR_COST,
   COLONY_OUTCOMES,
   createColonyState,
   FACILITY_TYPES,
@@ -53,13 +51,21 @@ const crater = {
 
 const base = (colony) => getActiveBase(colony);
 const cellOf = (colony, id) => base(colony).cells.find((c) => c.id === id);
+const corePortId = (colony, index = 0) => (
+  base(colony).cells.filter((cell) => cell.corePort)[index].id
+);
+const shadowId = (colony, index = 0) => (
+  base(colony).cells.filter((cell) => cell.zone === 'shadow' && !cell.corePort)[index].id
+);
+const rimId = (colony, index = 0) => (
+  base(colony).cells.filter((cell) => cell.zone === 'rim' && !cell.corePort)[index].id
+);
 const advance = (colony, sols) => {
   let next = colony;
   for (let i = 0; i < sols; i += 1) next = advanceColonySol(next);
   return next;
 };
 
-// 给库存开口子，用来隔离测试单一机制。
 const withStores = (colony, stores) => ({
   ...colony,
   bases: {
@@ -71,63 +77,60 @@ const withStores = (colony, stores) => ({
   },
 });
 
-const clearAll = (colony) => ({
-  ...colony,
-  bases: {
-    ...colony.bases,
-    'base-01': {
-      ...colony.bases['base-01'],
-      cells: colony.bases['base-01'].cells.map((c) => ({ ...c, cleared: true })),
-    },
-  },
-});
+const buildStarterFactory = (colony) => {
+  let next = colony;
+  next = buildFacility(next, shadowId(next, 0), FACILITY_TYPES.EXTRACTOR);
+  next = buildFacility(next, shadowId(next, 1), FACILITY_TYPES.SIFTER);
+  next = buildFacility(next, rimId(next, 0), FACILITY_TYPES.NUTRIENT);
+  next = buildFacility(next, corePortId(next, 0), FACILITY_TYPES.ROOT_FEEDER);
+  return next;
+};
 
 describe('colonyEconomy', () => {
   it('is deterministic for the same crater and action sequence', () => {
     const run = () => {
       let colony = createColonyState(crater);
-      colony = plantCell(colony, 'floor-0-0');
-      colony = plantCell(colony, 'floor-0-1');
-      return advance(colony, 20);
+      colony = buildStarterFactory(colony);
+      colony = advance(colony, 3);
+      colony = plantCell(colony, PLANTING_BED_ID);
+      return advance(colony, 12);
     };
 
     expect(run()).toEqual(run());
   });
 
-  it('starts with 26 cells and no permanently locked content', () => {
-    // 旧实现锁死 4/6 地块且只有一条解锁路径，三分之一内容永远进不去。
+  it('starts with one central potato core and 62 cleared exterior factory cells', () => {
     const colony = createColonyState(crater);
+    const cells = base(colony).cells;
 
-    expect(base(colony).cells).toHaveLength(26);
-    expect(base(colony).cells.every((cell) => 'cleared' in cell)).toBe(true);
-    // 未开垦的格子随时可以花能量开垦，不是死内容。
-    const unclearedId = base(colony).cells.find((c) => !c.cleared).id;
-    expect(canApplyTool(colony, unclearedId, TOOL_MODES.CLEAR)).toBe(true);
+    expect(cells).toHaveLength(63);
+    expect(cellOf(colony, PLANTING_BED_ID).isPlantingBed).toBe(true);
+    expect(cells.filter((cell) => cell.corePort)).toHaveLength(8);
+    expect(cells.every((cell) => cell.cleared)).toBe(true);
+    expect(cells.some((cell) => canApplyTool(colony, cell.id, TOOL_MODES.CLEAR)))
+      .toBe(false);
   });
 
-  it('never lets energy exceed the cap, and batteries raise it', () => {
-    // 旧实现反应堆 +2/SOL 无上限，能量无限累积。
+  it('keeps energy capped, and batteries raise the cap', () => {
     let colony = createColonyState(crater);
     const capBefore = getEnergyCap(base(colony));
 
     colony = advance(colony, 20);
     expect(base(colony).stores.energy).toBeLessThanOrEqual(capBefore);
 
-    colony = withStores(clearAll(colony), { energy: 40 });
-    colony = buildFacility(colony, 'rim-4-0', FACILITY_TYPES.BATTERY);
+    colony = withStores(colony, { energy: 40 });
+    const batteryCell = rimId(colony);
+    colony = buildFacility(colony, batteryCell, FACILITY_TYPES.BATTERY);
     colony = advance(colony, 2);
 
-    expect(cellOf(colony, 'rim-4-0').facility.type)
+    expect(cellOf(colony, batteryCell).facility.type)
       .toBe(FACILITY_TYPES.BATTERY);
     expect(getEnergyCap(base(colony))).toBeGreaterThan(capBefore);
   });
 
   it('draws far more water for the super potato than the crew alone', () => {
-    // 超级土豆是基地唯一的水槽大头：一台采冰器撑不住它 + 队伍。
-    let colony = withStores(clearAll(createColonyState(crater)), {
-      energy: 40, seedStock: 4,
-    });
-    colony = buildFacility(colony, 'shadow-2-1', FACILITY_TYPES.EXTRACTOR);
+    let colony = withStores(createColonyState(crater), { energy: 40, seedStock: 4 });
+    colony = buildFacility(colony, shadowId(colony), FACILITY_TYPES.EXTRACTOR);
     const idleDrain = getWaterDrain(base(colony));
     colony = plantCell(colony, PLANTING_BED_ID);
 
@@ -136,70 +139,67 @@ describe('colonyEconomy', () => {
       .toBeGreaterThan(getWaterIncome(base(colony)));
   });
 
-  it('only runs an extractor after construction completes in a shadow slot', () => {
-    let colony = withStores(clearAll(createColonyState(crater)), { energy: 40 });
+  it('only runs an extractor after construction completes in a shadow platform cell', () => {
+    let colony = withStores(createColonyState(crater), { energy: 40 });
+    const port = corePortId(colony);
+    const shadow = shadowId(colony);
 
-    expect(buildFacility(colony, 'floor-1-0', FACILITY_TYPES.EXTRACTOR))
-      .toBe(colony);
+    expect(buildFacility(colony, port, FACILITY_TYPES.EXTRACTOR)).toBe(colony);
 
-    colony = buildFacility(colony, 'shadow-2-1', FACILITY_TYPES.EXTRACTOR);
+    colony = buildFacility(colony, shadow, FACILITY_TYPES.EXTRACTOR);
     expect(getWaterIncome(base(colony))).toBe(BASE_WATER_RECLAIM);
 
     colony = advance(colony, 2);
     expect(getWaterIncome(base(colony))).toBeGreaterThan(BASE_WATER_RECLAIM);
   });
 
-  it('reserves core neighbours for cultivation facilities', () => {
-    let colony = withStores(clearAll(createColonyState(crater)), { energy: 40 });
+  it('reserves core ports for cultivation facilities', () => {
+    let colony = withStores(createColonyState(crater), { energy: 40 });
+    const port = corePortId(colony);
+    const nonPort = shadowId(colony);
 
-    expect(buildFacility(colony, 'floor-1-0', FACILITY_TYPES.NUTRIENT))
-      .toBe(colony);
-    colony = buildFacility(
-      colony,
-      'floor-1-0',
-      FACILITY_TYPES.ROOT_FEEDER
-    );
-    expect(cellOf(colony, 'floor-1-0').facility.type)
-      .toBe(FACILITY_TYPES.ROOT_FEEDER);
+    expect(buildFacility(colony, port, FACILITY_TYPES.NUTRIENT)).toBe(colony);
+    expect(buildFacility(colony, nonPort, FACILITY_TYPES.ROOT_FEEDER)).toBe(colony);
+
+    colony = buildFacility(colony, port, FACILITY_TYPES.ROOT_FEEDER);
+    expect(cellOf(colony, port).facility.type).toBe(FACILITY_TYPES.ROOT_FEEDER);
   });
 
-  it('grows without a factory, but root delivery makes the potato larger', () => {
-    let watered = withStores(clearAll(createColonyState(crater)), {
+  it('grows without a full factory, but root delivery makes the potato larger', () => {
+    let supported = withStores(createColonyState(crater), {
       energy: 40,
       water: 60,
       nutrients: 30,
     });
-    watered = buildFacility(
-      watered,
-      'floor-1-0',
+    supported = buildFacility(
+      supported,
+      corePortId(supported),
       FACILITY_TYPES.ROOT_FEEDER
     );
-    watered = advance(watered, 2);
-    watered = withStores(watered, { water: 60, nutrients: 30 });
-    watered = plantCell(watered, PLANTING_BED_ID);
-    watered = advance(watered, 24);
+    supported = advance(supported, 2);
+    supported = withStores(supported, { water: 60, nutrients: 30 });
+    supported = plantCell(supported, PLANTING_BED_ID);
+    supported = advance(supported, 24);
 
-    expect(base(watered).potato.status).toBe(POTATO_STATUS.READY);
+    expect(base(supported).potato.status).toBe(POTATO_STATUS.READY);
 
-    // 不完整工厂仍能低效维生，但不会得到同样的体积。
     let dry = withStores(createColonyState(crater), { water: 0 });
     dry = plantCell(dry, PLANTING_BED_ID);
     dry = advance(dry, 24);
 
     expect(base(dry).potato.quality)
-      .toBeLessThan(base(watered).potato.quality);
+      .toBeLessThan(base(supported).potato.quality);
     expect(getPotatoYield(base(dry)))
-      .toBeLessThan(getPotatoYield(base(watered)));
+      .toBeLessThan(getPotatoYield(base(supported)));
   });
 
   it('makes yield a function of care quality, not a hidden roll', () => {
-    // 「怎么伺候这一棵」直接就是产量。
-    const poor = { ...createColonyState(crater) };
+    const poor = createColonyState(crater);
     poor.bases['base-01'] = {
       ...poor.bases['base-01'],
       potato: { status: POTATO_STATUS.READY, growth: 100, solsGrown: 16, quality: 0 },
     };
-    const great = { ...createColonyState(crater) };
+    const great = createColonyState(crater);
     great.bases['base-01'] = {
       ...great.bases['base-01'],
       potato: { status: POTATO_STATUS.READY, growth: 100, solsGrown: 16, quality: 1 },
@@ -209,17 +209,9 @@ describe('colonyEconomy', () => {
     expect(getPotatoYield(base(great))).toBe(POTATO_MAX_YIELD);
   });
 
-  it('speeds the potato only from heaters adjacent to the planting bed', () => {
-    // 热控只能放在中央七个邻格，施工完成后才生效。
-    const neighbour = getNeighbourIds(PLANTING_BED_ID)[0];
-    const far = base(createColonyState(crater)).cells.find(
-      (cell) => cell.zone === 'rim'
-    ).id;
-
+  it('speeds the potato only from completed heaters on core ports', () => {
     const run = (heaterCell) => {
-      let colony = withStores(clearAll(createColonyState(crater)), {
-        energy: 40, water: 90,
-      });
+      let colony = withStores(createColonyState(crater), { energy: 40, water: 90 });
       if (heaterCell) {
         colony = buildFacility(colony, heaterCell, FACILITY_TYPES.HEATER);
         colony = advance(colony, 2);
@@ -228,42 +220,39 @@ describe('colonyEconomy', () => {
       return advance(colony, 6);
     };
 
+    const seeded = createColonyState(crater);
     const plain = run(null);
-    const adjacent = run(neighbour);
-    const distant = run(far);
+    const portHeated = run(corePortId(seeded));
+    const distantAttempt = run(rimId(seeded));
 
-    expect(base(adjacent).potato.growth)
+    expect(base(portHeated).potato.growth)
       .toBeGreaterThan(base(plain).potato.growth);
-    // 远处甚至不是合法落点。
-    expect(base(distant).potato.growth)
+    expect(base(distantAttempt).potato.growth)
       .toBeCloseTo(base(plain).potato.growth, 5);
   });
 
   it('idles every facility when energy cannot cover upkeep', () => {
-    // 四座热调节桩 8.8 E/SOL > 反应堆 6 E/SOL。
-    let colony = withStores(clearAll(createColonyState(crater)), { energy: 40 });
-    ['floor-1-0', 'floor-1-1', 'floor-1-2', 'floor-1-3']
-      .forEach((id) => { colony = buildFacility(colony, id, FACILITY_TYPES.HEATER); });
-    colony = buildFacility(colony, 'shadow-2-1', FACILITY_TYPES.EXTRACTOR);
+    let colony = withStores(createColonyState(crater), { energy: 80 });
+    [0, 1, 2, 3].forEach((index) => {
+      colony = buildFacility(colony, corePortId(colony, index), FACILITY_TYPES.HEATER);
+    });
+    colony = buildFacility(colony, shadowId(colony), FACILITY_TYPES.EXTRACTOR);
     colony = advance(colony, 2);
     colony = withStores(colony, { energy: 0, water: 5 });
 
     const ticked = advanceColonySol(colony);
 
     expect(base(ticked).facilitiesIdle).toBe(true);
-    // 停转的采冰器不产水，只剩不依赖电力的基础冷凝回收。
     expect(base(ticked).stores.water)
       .toBeLessThanOrEqual(5 + BASE_WATER_RECLAIM);
-    // 掉电时能量照样被抽干，不能靠「关机攒电」自动恢复。
     expect(base(ticked).stores.energy).toBe(0);
   });
 
   it('loses the base after a sustained blackout', () => {
-    let colony = withStores(clearAll(createColonyState(crater)), { energy: 40 });
-    colony = buildFacility(colony, 'floor-1-0', FACILITY_TYPES.HEATER);
-    colony = buildFacility(colony, 'floor-1-1', FACILITY_TYPES.HEATER);
-    colony = buildFacility(colony, 'floor-1-2', FACILITY_TYPES.HEATER);
-    colony = buildFacility(colony, 'floor-1-3', FACILITY_TYPES.HEATER);
+    let colony = withStores(createColonyState(crater), { energy: 80 });
+    [0, 1, 2, 3].forEach((index) => {
+      colony = buildFacility(colony, corePortId(colony, index), FACILITY_TYPES.HEATER);
+    });
     colony = advance(colony, 2);
     colony = withStores(colony, { energy: 0 });
     colony = advance(colony, BLACKOUT_LOSS_SOLS + 2);
@@ -277,31 +266,30 @@ describe('colonyEconomy', () => {
     expect(getStormSeverity(0).damagesFacilities).toBe(false);
     expect(getStormSeverity(2).zones).toContain('shadow');
     expect(getStormSeverity(5).damagesFacilities).toBe(true);
-    expect(getStormSeverity(5).zones).toHaveLength(3);
+    expect(getStormSeverity(5).zones).toEqual(['rim', 'shadow', 'inner']);
   });
 
-  it('protects the central potato only from an adjacent completed shield', () => {
-    let colony = withStores(clearAll(createColonyState(crater)), { energy: 40 });
-    colony = buildFacility(colony, 'floor-1-0', FACILITY_TYPES.SHIELD);
+  it('protects the central potato only from a completed shield on a core port', () => {
+    let colony = withStores(createColonyState(crater), { energy: 40 });
+    const port = corePortId(colony);
+    colony = buildFacility(colony, port, FACILITY_TYPES.SHIELD);
 
     expect(isShielded(base(colony), PLANTING_BED_ID)).toBe(false);
     colony = advance(colony, 3);
     expect(isShielded(base(colony), PLANTING_BED_ID)).toBe(true);
-    expect(buildFacility(colony, 'rim-4-0', FACILITY_TYPES.SHIELD))
-      .toBe(colony);
+    expect(buildFacility(colony, rimId(colony), FACILITY_TYPES.SHIELD)).toBe(colony);
   });
 
   it('charges upkeep for shields so blanketing them is not free', () => {
-    // 旧实现遮蔽棚 upkeep 为 0，铺满即永久删除唯一的事件系统。
-    let colony = withStores(clearAll(createColonyState(crater)), { energy: 60 });
-    ['floor-1-0', 'floor-1-2', 'floor-1-4']
-      .forEach((id) => { colony = buildFacility(colony, id, FACILITY_TYPES.SHIELD); });
+    let colony = withStores(createColonyState(crater), { energy: 80 });
+    [0, 1, 2].forEach((index) => {
+      colony = buildFacility(colony, corePortId(colony, index), FACILITY_TYPES.SHIELD);
+    });
     colony = advance(colony, 3);
 
     const before = base(colony).stores.energy;
     colony = advanceColonySol(colony);
 
-    // 三座遮蔽棚 4.5 E/SOL 已经吃掉大半反应堆产出。
     expect(base(colony).stores.energy - before).toBeLessThan(2);
   });
 
@@ -322,44 +310,30 @@ describe('colonyEconomy', () => {
     expect(base(colony).stores.seedStock).toBe(seeds + 1);
   });
 
-  it('keeps the planting bed free of facilities', () => {
-    // 种植床是唯一能长土豆的地方，被设施占掉就等于断了唯一产出口。
-    const colony = withStores(createColonyState(crater), { energy: 40 });
+  it('keeps the planting bed free of facilities and allows only one potato', () => {
+    let colony = withStores(createColonyState(crater), { energy: 40, seedStock: 4 });
 
     expect(buildFacility(colony, PLANTING_BED_ID, FACILITY_TYPES.HEATER))
       .toBe(colony);
     expect(canApplyTool(colony, PLANTING_BED_ID, TOOL_MODES.BUILD_HEATER))
       .toBe(false);
-  });
 
-  it('allows only one potato at a time', () => {
-    let colony = withStores(createColonyState(crater), { seedStock: 4 });
     colony = plantCell(colony, PLANTING_BED_ID);
-
-    // 已经有一棵了，再种是空操作。
     expect(plantCell(colony, PLANTING_BED_ID)).toBe(colony);
-    // 别的格子也种不了 —— 一个坑只有一棵。
-    const other = base(colony).cells.find((cell) => !cell.isPlantingBed);
-    expect(plantCell(colony, other.id)).toBe(colony);
+    expect(plantCell(colony, shadowId(colony))).toBe(colony);
   });
 
-  it('spends energy to clear a cell and refunds half when demolishing', () => {
-    let colony = createColonyState(crater);
-    const unclearedId = base(colony).cells.find(
-      (cell) => !cell.cleared && cell.ring > 1
-    ).id;
-    const energyBefore = base(colony).stores.energy;
+  it('refunds part of a demolished facility and keeps clear hidden for open cells', () => {
+    let colony = withStores(createColonyState(crater), { energy: 40 });
+    const id = rimId(colony);
 
-    colony = clearCell(colony, unclearedId);
-    expect(cellOf(colony, unclearedId).cleared).toBe(true);
-    expect(base(colony).stores.energy).toBe(energyBefore - CLEAR_COST);
-
-    colony = buildFacility(colony, unclearedId, FACILITY_TYPES.BATTERY);
+    expect(clearCell(colony, id)).toBe(colony);
+    colony = buildFacility(colony, id, FACILITY_TYPES.BATTERY);
     const afterBuild = base(colony).stores.energy;
-    colony = demolishCell(colony, unclearedId);
+    colony = demolishCell(colony, id);
 
     expect(base(colony).stores.energy).toBeGreaterThan(afterBuild);
-    expect(cellOf(colony, unclearedId).facility).toBeNull();
+    expect(cellOf(colony, id).facility).toBeNull();
   });
 
   it('delivers a contract, banks the reward and wins after the last one', () => {
@@ -381,28 +355,26 @@ describe('colonyEconomy', () => {
   });
 
   it('fails the base when a contract deadline passes', () => {
-    const colony = advance(createColonyState(crater), 30);
+    const colony = advance(createColonyState(crater), 35);
 
     expect(colony.outcome).toBe(COLONY_OUTCOMES.LOST);
     expect(colony.lossReason).toBe(LOSS_REASONS.CONTRACT);
   });
 
   it('rejects invalid operations by returning the same reference', () => {
-    // canApplyTool 为 false 与「操作返回同一引用」必须严格互为等价，
-    // 否则 3D 高亮了却点不动。
     const colony = createColonyState(crater);
-    const unclearedId = base(colony).cells.find((c) => !c.cleared).id;
+    const exterior = shadowId(colony);
 
-    expect(plantCell(colony, unclearedId)).toBe(colony);
+    expect(plantCell(colony, exterior)).toBe(colony);
     expect(plantCell(colony, 'no-such-cell')).toBe(colony);
-    expect(harvestCell(colony, 'floor-0-0')).toBe(colony);
-    expect(demolishCell(colony, 'floor-0-0')).toBe(colony);
+    expect(harvestCell(colony, PLANTING_BED_ID)).toBe(colony);
+    expect(demolishCell(colony, PLANTING_BED_ID)).toBe(colony);
     expect(convertTubersToSeeds(colony, 1)).toBe(colony);
     expect(deliverContract(colony, 'supply-01')).toBe(colony);
-    expect(buildFacility(colony, 'floor-0-0', 'no-such-facility')).toBe(colony);
+    expect(buildFacility(colony, PLANTING_BED_ID, 'no-such-facility')).toBe(colony);
   });
 
-  it('mirrors every operation guard through canApplyTool', () => {
+  it('mirrors direct operation guards through canApplyTool', () => {
     const colony = withStores(createColonyState(crater), { energy: 40 });
 
     base(colony).cells.forEach((cell) => {
@@ -426,53 +398,43 @@ describe('colonyEconomy', () => {
     const finished = { ...createColonyState(crater), outcome: COLONY_OUTCOMES.LOST };
 
     expect(advanceColonySol(finished)).toBe(finished);
-    expect(plantCell(finished, 'floor-0-0')).toBe(finished);
-    expect(canApplyTool(finished, 'floor-0-0', TOOL_MODES.PLANT)).toBe(false);
+    expect(plantCell(finished, PLANTING_BED_ID)).toBe(finished);
+    expect(canApplyTool(finished, PLANTING_BED_ID, TOOL_MODES.PLANT)).toBe(false);
   });
 
-  it('surfaces storm countdown and harvest alerts', () => {
+  it('surfaces storm countdown, idle state and harvest alerts', () => {
+    const idleKinds = getColonyAlerts(createColonyState(crater)).map(
+      (alert) => alert.kind
+    );
+    expect(idleKinds).toContain('idle');
+
     let colony = withStores(createColonyState(crater), { water: 60 });
-    colony = plantCell(colony, 'floor-0-0');
+    colony = plantCell(colony, PLANTING_BED_ID);
     colony = advance(colony, 24);
 
     const kinds = getColonyAlerts(colony).map((alert) => alert.kind);
     expect(kinds).toContain('harvest');
   });
 
-  it('warns when nothing is growing instead of silently stalling', () => {
-    // 一格没种是可恢复的（有块茎就能转种薯），但玩家很容易没察觉
-    // 自己已经停产，然后对着不再变化的画面等到合约超期。
-    const idle = createColonyState(crater);
-    const kinds = getColonyAlerts(idle).map((alert) => alert.kind);
-
-    expect(kinds).toContain('idle');
-  });
-
-  it('ends the run when no further crop is possible', () => {
-    // 真死局：没有在长的作物、没种薯、块茎也换不出一颗种薯。
-    // 必须立刻结算，而不是让玩家等到合约超期。
+  it('ends the run only when no further crop is possible', () => {
     const dead = advanceColonySol(
       withStores(createColonyState(crater), { seedStock: 0, tubers: 1 })
     );
 
     expect(dead.outcome).toBe(COLONY_OUTCOMES.LOST);
     expect(dead.lossReason).toBe(LOSS_REASONS.SEED);
-  });
 
-  it('keeps a stocked base alive even with no seeds in hand', () => {
-    // 手上有块茎就还能翻身，不能判死。
     const recoverable = advanceColonySol(
       withStores(createColonyState(crater), { seedStock: 0, tubers: 12 })
     );
-
     expect(recoverable.outcome).toBeNull();
   });
 
   it('caps water so it cannot be hoarded into irrelevance', () => {
-    // 无上限的资源在第一次建造之后就不再是约束 —— 能量与水同理。
-    let colony = withStores(clearAll(createColonyState(crater)), { energy: 60 });
-    ['shadow-2-0', 'shadow-2-2', 'shadow-2-4']
-      .forEach((id) => { colony = buildFacility(colony, id, FACILITY_TYPES.EXTRACTOR); });
+    let colony = withStores(createColonyState(crater), { energy: 60 });
+    [0, 1, 2].forEach((index) => {
+      colony = buildFacility(colony, shadowId(colony, index), FACILITY_TYPES.EXTRACTOR);
+    });
     colony = advance(colony, 2);
     colony = advance(colony, 40);
 
@@ -481,8 +443,6 @@ describe('colonyEconomy', () => {
   });
 
   it('reclaims enough water on its own to reach the first harvest', () => {
-    // 开局没有采冰器：基础冷凝回收保证第一棵土豆能长成（哪怕干瘪），
-    // 否则开局是无解的死局 —— 那时的能量还买不起采冰器。
     let colony = createColonyState(crater);
     colony = plantCell(colony, PLANTING_BED_ID);
     colony = advance(colony, 26);
@@ -490,40 +450,38 @@ describe('colonyEconomy', () => {
     expect(base(colony).potato.status).toBe(POTATO_STATUS.READY);
   });
 
-  it('lets a plain three-cell rotation meet the first contract in time', () => {
-    // 首个合约的可达性是旧设计的致命伤（差坑上数学上不可能）。
-    // 只种初始三格、不扩张、不留种，必须在截止前攒够。
-    let colony = createColonyState(crater);
-    colony = buildFacility(colony, 'shadow-2-0', FACILITY_TYPES.EXTRACTOR);
-
-    base(colony).cells
-      .filter((cell) => cell.cleared && !cell.use)
-      .forEach((cell) => { colony = plantCell(colony, cell.id); });
+  it('lets a starter factory meet the first contract in time', () => {
+    let colony = buildStarterFactory(createColonyState(crater));
+    colony = advance(colony, 3);
+    colony = plantCell(colony, PLANTING_BED_ID);
 
     const [contract] = colony.contracts;
-
-    for (let sol = 0; sol < contract.deadlineSol; sol += 1) {
+    while (
+      !colony.outcome
+      && colony.sol <= contract.deadlineSol
+      && base(colony).stores.tubers < contract.amount
+    ) {
       colony = advanceColonySol(colony);
-      base(colony).cells.forEach((cell) => {
-        if (canApplyTool(colony, cell.id, TOOL_MODES.HARVEST)) {
-          colony = harvestCell(colony, cell.id);
-        }
-      });
+      if (canApplyTool(colony, PLANTING_BED_ID, TOOL_MODES.HARVEST)) {
+        colony = harvestCell(colony, PLANTING_BED_ID);
+      }
     }
 
     expect(base(colony).stores.tubers)
       .toBeGreaterThanOrEqual(contract.amount);
+    colony = deliverContract(colony, contract.id);
+    expect(colony.contracts[0].status).toBe('done');
   });
 
   it('turns water and minerals into nutrients, then feeds the center', () => {
-    let colony = withStores(clearAll(createColonyState(crater)), {
+    let colony = withStores(createColonyState(crater), {
       energy: 80,
       water: 20,
     });
-    colony = buildFacility(colony, 'shadow-2-0', FACILITY_TYPES.EXTRACTOR);
-    colony = buildFacility(colony, 'shadow-2-1', FACILITY_TYPES.SIFTER);
-    colony = buildFacility(colony, 'shadow-3-0', FACILITY_TYPES.NUTRIENT);
-    colony = buildFacility(colony, 'floor-1-0', FACILITY_TYPES.ROOT_FEEDER);
+    colony = buildFacility(colony, shadowId(colony, 0), FACILITY_TYPES.EXTRACTOR);
+    colony = buildFacility(colony, shadowId(colony, 1), FACILITY_TYPES.SIFTER);
+    colony = buildFacility(colony, rimId(colony, 0), FACILITY_TYPES.NUTRIENT);
+    colony = buildFacility(colony, corePortId(colony, 0), FACILITY_TYPES.ROOT_FEEDER);
     colony = advance(colony, 3);
 
     const bottleneck = getFactoryBottleneck(base(colony));
@@ -539,12 +497,13 @@ describe('colonyEconomy', () => {
   });
 
   it('degrades damaged facilities and repairs them with energy', () => {
-    let colony = withStores(clearAll(createColonyState(crater)), { energy: 50 });
-    colony = buildFacility(colony, 'shadow-2-0', FACILITY_TYPES.EXTRACTOR);
+    let colony = withStores(createColonyState(crater), { energy: 50 });
+    const id = shadowId(colony);
+    colony = buildFacility(colony, id, FACILITY_TYPES.EXTRACTOR);
     colony = advance(colony, 2);
 
     const damagedCells = base(colony).cells.map((cell) => (
-      cell.id === 'shadow-2-0'
+      cell.id === id
         ? {
           ...cell,
           facility: { ...cell.facility, integrity: 40, status: 'degraded' },
@@ -559,9 +518,31 @@ describe('colonyEconomy', () => {
       },
     };
 
-    const cost = getRepairCost(cellOf(colony, 'shadow-2-0').facility);
+    const cost = getRepairCost(cellOf(colony, id).facility);
     expect(cost).toBeGreaterThan(0);
-    colony = repairFacility(colony, 'shadow-2-0');
-    expect(cellOf(colony, 'shadow-2-0').facility.integrity).toBe(100);
+    colony = repairFacility(colony, id);
+    expect(cellOf(colony, id).facility.integrity).toBe(100);
+  });
+
+  it('has at least one legal non-core factory slot for every non-cultivation category', () => {
+    const colony = withStores(createColonyState(crater), { energy: 80 });
+
+    [
+      FACILITY_TYPES.EXTRACTOR,
+      FACILITY_TYPES.SIFTER,
+      FACILITY_TYPES.SOLAR,
+      FACILITY_TYPES.BATTERY,
+      FACILITY_TYPES.NUTRIENT,
+    ].forEach((type) => {
+      expect(base(colony).cells.some((cell) => (
+        canApplyTool(colony, cell.id, {
+          [FACILITY_TYPES.EXTRACTOR]: TOOL_MODES.BUILD_EXTRACTOR,
+          [FACILITY_TYPES.SIFTER]: TOOL_MODES.BUILD_SIFTER,
+          [FACILITY_TYPES.SOLAR]: TOOL_MODES.BUILD_SOLAR,
+          [FACILITY_TYPES.BATTERY]: TOOL_MODES.BUILD_BATTERY,
+          [FACILITY_TYPES.NUTRIENT]: TOOL_MODES.BUILD_NUTRIENT,
+        }[type])
+      ))).toBe(true);
+    });
   });
 });

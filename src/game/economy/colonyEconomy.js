@@ -45,9 +45,9 @@ const getNeighbourCells = (base, cellId) => getNeighbourIds(cellId)
   .map((id) => getCell(base, id))
   .filter(Boolean);
 
-const isCoreNeighbour = (cellId) => (
-  getNeighbourIds(PLANTING_BED_ID).includes(cellId)
-);
+const isCorePort = (cell) => Boolean(cell?.corePort);
+
+const getCorePortCells = (base) => base.cells.filter(isCorePort);
 
 export const getFacilityStatus = (facility, facilitiesIdle = false) => {
   if (!facility) return null;
@@ -131,7 +131,7 @@ const getNutrientEfficiency = (base, cell) => {
 };
 
 const getCoreFacilityPower = (base, type, perSol) => (
-  getNeighbourCells(base, PLANTING_BED_ID).reduce((total, cell) => {
+  getCorePortCells(base).reduce((total, cell) => {
     if (!isFacilityOperational(base, cell, type)) return total;
     return total + perSol * getFacilityEfficiency(cell.facility);
   }, 0)
@@ -140,6 +140,14 @@ const getCoreFacilityPower = (base, type, perSol) => (
 export const isShielded = (base, cellId) => {
   const cell = getCell(base, cellId);
   if (!cell) return false;
+
+  if (cell.isPlantingBed) {
+    return getCoreFacilityPower(
+      base,
+      FACILITY_TYPES.SHIELD,
+      FACILITY_SPECS[FACILITY_TYPES.SHIELD].stabilityPerSol
+    ) > 0;
+  }
 
   return [cell, ...getNeighbourCells(base, cellId)].some(
     (candidate) => isFacilityOperational(
@@ -153,6 +161,14 @@ export const isShielded = (base, cellId) => {
 export const isHeated = (base, cellId) => {
   const cell = getCell(base, cellId);
   if (!cell) return false;
+
+  if (cell.isPlantingBed) {
+    return getCoreFacilityPower(
+      base,
+      FACILITY_TYPES.HEATER,
+      FACILITY_SPECS[FACILITY_TYPES.HEATER].thermalPerSol
+    ) > 0;
+  }
 
   return [cell, ...getNeighbourCells(base, cellId)].some(
     (candidate) => isFacilityOperational(
@@ -250,7 +266,7 @@ const getRootCapacity = (base, resource) => {
   const spec = FACILITY_SPECS[FACILITY_TYPES.ROOT_FEEDER];
   const key = resource === 'water' ? 'waterPerSol' : 'nutrientPerSol';
 
-  return getNeighbourCells(base, PLANTING_BED_ID).reduce((total, cell) => {
+  return getCorePortCells(base).reduce((total, cell) => {
     if (!isFacilityOperational(base, cell, FACILITY_TYPES.ROOT_FEEDER)) {
       return total;
     }
@@ -309,12 +325,12 @@ export const getFactoryBottleneck = (base) => {
     return { kind: 'nutrients', text: '建造营养合成器接上采集端' };
   }
   if (!built(FACILITY_TYPES.ROOT_FEEDER)) {
-    const hasOpenCoreNeighbour = getNeighbourCells(base, PLANTING_BED_ID)
+    const hasOpenCorePort = getCorePortCells(base)
       .some((cell) => cell.cleared && !cell.use);
-    if (!hasOpenCoreNeighbour) {
-      return { kind: 'delivery', text: '先开垦一处中央邻格，再建造根区灌注器' };
+    if (!hasOpenCorePort) {
+      return { kind: 'delivery', text: '培育主管线接口已被占满，拆除一个接口设施' };
     }
-    return { kind: 'delivery', text: '在中央邻格建造根区灌注器' };
+    return { kind: 'delivery', text: '在坑外发亮的培育接口建造根区灌注器' };
   }
   if (!base.potato) {
     return { kind: 'planting', text: '在中央培育核心播下一颗种薯' };
@@ -783,10 +799,10 @@ const canPlaceFacility = (base, cell, type) => {
     return false;
   }
   if (!spec.allowedZones.includes(cell.zone)) return false;
-  // 中央七格是培育核心的扩展接口。加工与供能设施即使区位允许，
-  // 也不能占走根灌、加热、遮蔽所需的唯一邻接位。
-  if (isCoreNeighbour(cell.id) && !spec.requiresCoreAdjacency) return false;
-  if (spec.requiresCoreAdjacency && !isCoreNeighbour(cell.id)) return false;
+  // 培育类设施必须占用坑外主管线接口；其他设施不占接口，避免
+  // 开局把根灌、热控、遮蔽的少数接入口误用掉。
+  if (isCorePort(cell) && !spec.requiresCorePort) return false;
+  if (spec.requiresCorePort && !isCorePort(cell)) return false;
   return true;
 };
 

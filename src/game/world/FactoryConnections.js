@@ -185,7 +185,7 @@ const FactoryConnections = ({ base, layouts }) => {
       if (
         center
         && CULTIVATION_LINKS.has(cell.facility.type)
-        && getNeighbourIds(PLANTING_BED_ID).includes(cell.id)
+        && cell.corePort
       ) {
         pushLink({
           source: cell,

@@ -6,8 +6,8 @@ import { TERRAIN_RADIUS } from './terrainBands';
 
 // The single tuber is the visual heart of the crater. It grows continuously
 // from a buried pearl into the large liquid specimen used by the original app.
-const MATURE_RADIUS = TERRAIN_RADIUS * 0.15;
-const MIN_RADIUS = MATURE_RADIUS * 0.12;
+const MATURE_RADIUS = TERRAIN_RADIUS * 0.24;
+const MIN_RADIUS = MATURE_RADIUS * 0.14;
 
 export const PLANT_LABEL_HEIGHT = MATURE_RADIUS * 2.7;
 
@@ -107,11 +107,11 @@ const SuperPotato = ({ growth = 0, quality = 0.5, seed = 1 }) => {
     const radius = THREE.MathUtils.lerp(MIN_RADIUS, MATURE_RADIUS, current);
     const breath = 1 + Math.sin(state.clock.elapsedTime * 1.35 + phase) * 0.025;
     groupRef.current.scale.set(
-      radius * 1.14 * breath,
-      radius * (0.84 + current * 0.1) * breath,
-      radius * (0.98 + Math.sin(phase) * 0.035) * breath
+      radius * 1.2 * breath,
+      radius * (0.88 + current * 0.12) * breath,
+      radius * (1.02 + Math.sin(phase) * 0.04) * breath
     );
-    groupRef.current.position.y = radius * (0.68 + current * 0.05);
+    groupRef.current.position.y = radius * (0.7 + current * 0.05);
     groupRef.current.rotation.y += delta * (0.035 + current * 0.045);
 
     if (specimenRef.current) {
@@ -125,8 +125,6 @@ const SuperPotato = ({ growth = 0, quality = 0.5, seed = 1 }) => {
       );
     }
   });
-
-  if (growth <= 0) return null;
 
   return (
     <group>

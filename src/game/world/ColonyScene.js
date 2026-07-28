@@ -19,7 +19,6 @@ import SuperPotato, { PLANT_LABEL_HEIGHT } from './SuperPotato';
 import FacilityModel from './FacilityModels';
 import FactoryConnections from './FactoryConnections';
 import { calculateCraterPosition } from './worldCoordinates';
-import { createCellLattice } from '../economy/baseLayout';
 import { canApplyTool } from '../economy/colonyEconomy';
 import {
   FACILITY_SPECS,
@@ -30,48 +29,31 @@ import {
 import { useCursorStore } from '../../store';
 
 const LABEL_FONT_SIZE = 0.017;
-const GRID_PITCH = TERRAIN_RADIUS * 0.4;
+const GRID_PITCH = TERRAIN_RADIUS * 0.34;
 const GRID_CELL_SIZE = GRID_PITCH * 0.78;
-const FACTORY_RADIUS = GRID_CELL_SIZE * 0.39;
-
-// 7x7 方格的外环恰好提供 24 个建筑位，再在近侧中央追加一个
-// 总线位。视觉网格围住坑体但不侵入坑内，规则邻接仍由 baseLayout
-// 独立计算。
-const GRID_COORDINATES = Object.freeze([
-  ...Array.from({ length: 7 }, (_, index) => ({
-    column: index - 3,
-    row: -3,
-  })),
-  ...Array.from({ length: 6 }, (_, index) => ({
-    column: 3,
-    row: index - 2,
-  })),
-  ...Array.from({ length: 6 }, (_, index) => ({
-    column: 2 - index,
-    row: 3,
-  })),
-  ...Array.from({ length: 5 }, (_, index) => ({
-    column: -3,
-    row: 2 - index,
-  })),
-  { column: 0, row: 4 },
-].map(Object.freeze));
+const FACTORY_RADIUS = GRID_CELL_SIZE * 0.68;
 
 const createExteriorVisualLayouts = (cells, seed) => {
   const layouts = new Map();
   const floor = sampleTerrain(0, 0, seed);
+  const coreCell = cells.find((cell) => cell.id === PLANTING_BED_ID) || {
+    id: PLANTING_BED_ID,
+    zone: 'core',
+    isPlantingBed: true,
+  };
   const exteriorCells = cells.filter((cell) => cell.id !== PLANTING_BED_ID);
 
   layouts.set(PLANTING_BED_ID, {
-    ...cells.find((cell) => cell.id === PLANTING_BED_ID),
+    ...coreCell,
     x: 0,
     z: 0,
     height: floor.height,
     visualKind: 'cultivation-core',
   });
 
-  exteriorCells.forEach((cell, index) => {
-    const { column, row } = GRID_COORDINATES[index];
+  exteriorCells.forEach((cell) => {
+    const column = cell.column ?? 0;
+    const row = cell.row ?? 0;
     const x = column * GRID_PITCH;
     const z = row * GRID_PITCH;
     const angle = Math.atan2(z, x);
@@ -85,6 +67,7 @@ const createExteriorVisualLayouts = (cells, seed) => {
       height: plain.height + 0.006,
       gridColumn: column,
       gridRow: row,
+      corePort: cell.corePort,
       visualKind: 'factory-grid',
     });
   });
@@ -122,13 +105,13 @@ const IndustrialGrid = ({ layouts }) => {
           position={[layout.x, layout.height - 0.002, layout.z]}
         >
           <mesh raycast={() => null}>
-            <boxGeometry args={[GRID_CELL_SIZE, 0.014, GRID_CELL_SIZE]} />
+            <boxGeometry args={[GRID_CELL_SIZE, 0.008, GRID_CELL_SIZE]} />
             <meshStandardMaterial
-              color="#633724"
+              color={layout.corePort ? '#7c4a31' : '#5b3325'}
               roughness={0.74}
               metalness={0.3}
               transparent
-              opacity={0.82}
+              opacity={layout.corePort ? 0.46 : 0.18}
             />
           </mesh>
           <mesh
@@ -136,13 +119,11 @@ const IndustrialGrid = ({ layouts }) => {
             rotation={[-Math.PI / 2, 0, 0]}
             raycast={() => null}
           >
-            <ringGeometry
-              args={[GRID_CELL_SIZE * 0.39, GRID_CELL_SIZE * 0.47, 4]}
-            />
+            <planeGeometry args={[GRID_CELL_SIZE * 0.84, GRID_CELL_SIZE * 0.84]} />
             <meshBasicMaterial
-              color="#b76d48"
+              color={layout.corePort ? '#ffd0a8' : '#b76d48'}
               transparent
-              opacity={0.2}
+              opacity={layout.corePort ? 0.13 : 0.035}
               depthWrite={false}
               side={THREE.DoubleSide}
               toneMapped={false}
@@ -159,14 +140,16 @@ const IndustrialGrid = ({ layouts }) => {
           <boxGeometry
             args={[
               link.horizontal ? GRID_PITCH - GRID_CELL_SIZE : 0.018,
-              0.012,
+              0.007,
               link.horizontal ? 0.018 : GRID_PITCH - GRID_CELL_SIZE,
             ]}
           />
           <meshStandardMaterial
-            color="#70402c"
+            color="#7c462e"
             roughness={0.68}
             metalness={0.38}
+            transparent
+            opacity={0.2}
           />
         </mesh>
       ))}
@@ -408,8 +391,8 @@ const ColonyScene = ({ crater, colony, base, selectedTool, onCellAction }) => {
   const blendTexture = useMemo(() => createBlendTexture(seed), [seed]);
   const detailTexture = useMemo(() => createRockDetailTexture(seed), [seed]);
   const layouts = useMemo(
-    () => createExteriorVisualLayouts(createCellLattice(base.seed), seed),
-    [base.seed, seed]
+    () => createExteriorVisualLayouts(base.cells, seed),
+    [base.cells, seed]
   );
 
   useEffect(() => () => {

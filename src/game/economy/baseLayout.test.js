@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
   assertRingsWithinZones,
   CELL_COUNT,
-  CELL_RINGS,
   createCellLattice,
   getNeighbourIds,
 } from './baseLayout';
@@ -10,19 +9,18 @@ import {
 const SEED = 1234567;
 const TAU = Math.PI * 2;
 
-const byId = (cells) => new Map(cells.map((cell) => [cell.id, cell]));
-
 describe('baseLayout', () => {
-  it('produces 26 uniquely identified cells', () => {
+  it('produces 62 uniquely identified exterior factory cells', () => {
     const cells = createCellLattice(SEED);
 
-    expect(cells).toHaveLength(26);
-    expect(CELL_COUNT).toBe(26);
-    expect(new Set(cells.map((cell) => cell.id)).size).toBe(26);
+    expect(cells).toHaveLength(62);
+    expect(CELL_COUNT).toBe(62);
+    expect(new Set(cells.map((cell) => cell.id)).size).toBe(62);
+    expect(cells.some((cell) => cell.id === 'core-0-0')).toBe(false);
+    expect(cells.every((cell) => cell.id.startsWith('factory-'))).toBe(true);
   });
 
-  it('keeps every ring inside its own planting zone band', () => {
-    // 环定义漂出 ZONE_BANDS 就意味着「坑底」的格子实际长在坑壁上。
+  it('keeps compatibility zone assertion true while the core is a separate cell', () => {
     expect(assertRingsWithinZones()).toBe(true);
   });
 
@@ -30,22 +28,29 @@ describe('baseLayout', () => {
     expect(createCellLattice(SEED)).toEqual(createCellLattice(SEED));
   });
 
-  it('gives the center seven neighbours and leaves no outer cell isolated', () => {
-    const cells = createCellLattice(SEED);
-    const center = cells.find((cell) => cell.id === 'floor-0-0');
-    const degrees = cells
-      .filter((cell) => cell.id !== center.id)
+  it('creates eight cultivation ports around the central potato', () => {
+    const ports = createCellLattice(SEED).filter((cell) => cell.corePort);
+
+    expect(ports).toHaveLength(8);
+    expect(ports.every((cell) => cell.zone === 'inner')).toBe(true);
+    expect(new Set(ports.map((cell) => `${cell.column}|${cell.row}`))).toEqual(
+      new Set([
+        '-1|-1', '0|-1', '1|-1',
+        '-1|0', '1|0',
+        '-1|1', '0|1', '1|1',
+      ])
+    );
+  });
+
+  it('leaves no exterior platform cell isolated', () => {
+    const degrees = createCellLattice(SEED)
       .map((cell) => getNeighbourIds(cell.id).length);
 
-    expect(center.normalizedRadius).toBe(0);
-    expect(getNeighbourIds(center.id)).toHaveLength(7);
-    expect(Math.min(...degrees)).toBeGreaterThanOrEqual(3);
-    expect(Math.max(...degrees)).toBeLessThanOrEqual(5);
+    expect(Math.min(...degrees)).toBeGreaterThanOrEqual(2);
+    expect(Math.max(...degrees)).toBeLessThanOrEqual(4);
   });
 
   it('keeps adjacency symmetric', () => {
-    // 设施覆盖与劳力折扣都双向读邻接，不对称会让 A 罩得住 B
-    // 而 B 罩不住 A。
     createCellLattice(SEED).forEach((cell) => {
       getNeighbourIds(cell.id).forEach((neighbourId) => {
         expect(getNeighbourIds(neighbourId)).toContain(cell.id);
@@ -53,25 +58,20 @@ describe('baseLayout', () => {
     });
   });
 
-  it('derives adjacency from nominal angles, so the seed cannot change it', () => {
-    // 抖动只是视觉的。邻接是游戏规则（设施覆盖、基因干预向量），
-    // 若随 seed 变化，同一套布局在不同坑里的规则就不一样了。
+  it('derives adjacency from grid coordinates, so the seed cannot change it', () => {
     const a = createCellLattice(SEED);
     const b = createCellLattice(SEED + 8191);
 
     expect(a.map((cell) => cell.angle))
       .not.toEqual(b.map((cell) => cell.angle));
-
+    expect(a.map((cell) => [cell.id, cell.column, cell.row, cell.nominalAngle]))
+      .toEqual(b.map((cell) => [cell.id, cell.column, cell.row, cell.nominalAngle]));
     a.forEach((cell) => {
       expect(getNeighbourIds(cell.id)).toEqual(getNeighbourIds(cell.id));
     });
-    expect(a.map((cell) => cell.nominalAngle))
-      .toEqual(b.map((cell) => cell.nominalAngle));
   });
 
-  it('keeps the jitter below the adjacency threshold', () => {
-    // 抖动上限 0.25 扇区、邻接阈值 0.5 扇区。抖动一旦追平阈值，
-    // 上一条测试的保证就失效了。
+  it('keeps visual jitter small enough to remain a visual-only offset', () => {
     createCellLattice(SEED).forEach((cell) => {
       const raw = Math.abs(cell.angle - cell.nominalAngle);
       const gap = Math.min(raw, TAU - raw);
@@ -80,43 +80,21 @@ describe('baseLayout', () => {
     });
   });
 
-  it('never overlaps the footprints of adjacent cells', () => {
-    const cells = createCellLattice(SEED);
-    const lookup = byId(cells);
-
-    cells.forEach((cell) => {
-      getNeighbourIds(cell.id).forEach((neighbourId) => {
-        const other = lookup.get(neighbourId);
-        const dx = cell.normalizedRadius * Math.cos(cell.angle)
-          - other.normalizedRadius * Math.cos(other.angle);
-        const dz = cell.normalizedRadius * Math.sin(cell.angle)
-          - other.normalizedRadius * Math.sin(other.angle);
-
-        expect(Math.hypot(dx, dz))
-          .toBeGreaterThan(cell.footprintRadius + other.footprintRadius);
-      });
-    });
-  });
-
-  it('gives every cell a finite, positive footprint', () => {
+  it('gives every exterior platform cell a finite, positive footprint', () => {
     createCellLattice(SEED).forEach((cell) => {
       expect(Number.isFinite(cell.footprintRadius)).toBe(true);
       expect(cell.footprintRadius).toBeGreaterThan(0);
-      // 旧的 PLOT_RADII 是 0.11-0.16，26 格时必然重叠。
-      expect(cell.footprintRadius).toBeLessThanOrEqual(
-        cell.id === 'floor-0-0' ? 0.09 : 0.08
-      );
+      expect(cell.footprintRadius).toBeLessThanOrEqual(0.42);
     });
   });
 
   it('returns an empty neighbour list for unknown ids instead of throwing', () => {
-    // 旧的 PLOT_ANGLES 对未知 id 返回 undefined → NaN 坐标 → 格子静默消失。
     expect(getNeighbourIds('no-such-cell')).toEqual([]);
   });
 
-  it('spreads cells across all three zones', () => {
-    const zones = new Set(CELL_RINGS.map((ring) => ring.zone));
+  it('spreads exterior cells across factory zones', () => {
+    const zones = new Set(createCellLattice(SEED).map((cell) => cell.zone));
 
-    expect([...zones].sort()).toEqual(['floor', 'rim', 'shadow']);
+    expect([...zones].sort()).toEqual(['inner', 'rim', 'shadow']);
   });
 });
