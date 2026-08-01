@@ -3,7 +3,7 @@ import React, { createContext, useState, useContext } from 'react';
 const DataContext = createContext();
 
 export const DataProvider = ({ children }) => {
-  const [craterData, setCraterData] = useState({ preview: [], full: [] });
+  const [craterData, setCraterData] = useState({ available: [], totalCount: 0 });
   const [potatoData, setPotatoData] = useState([]);
   const [selectedCrater, setSelectedCrater] = useState(null);
 

@@ -1,33 +1,88 @@
 import React, { useRef, useMemo, useState, useEffect } from 'react';
-import { useFrame, useLoader, useThree } from '@react-three/fiber';
-import { OrbitControls, Text, useTexture } from '@react-three/drei';
+import { useFrame, useThree } from '@react-three/fiber';
+import { OrbitControls, Text } from '@react-three/drei';
+import { EffectComposer, SMAA } from '@react-three/postprocessing';
 import * as THREE from 'three';
-import VisShape from '../../Components/VisShape/VisShape';
-import { OverlayBackground } from '../../Components/OverlayLayers'
-import Panel from '../../Components/Panel';
 import  { useCursorStore } from '../../store'
+import CraterCultivationScene from '../../game/world/CraterCultivationScene';
+import ColonyScene from '../../game/world/ColonyScene';
+import CraterViewEffects from '../../game/world/CraterViewEffects';
+import WorldCameraRig from '../../game/world/WorldCameraRig';
+import { calculateCraterPosition } from '../../game/world/worldCoordinates';
+import { getCraterHoleAngle } from '../../game/world/craterVisualModel';
+import { VIEW_MODES } from '../../game/simulation/breedingSimulation';
 
 // 在组件外部创建纹理缓存
 const textureCache = {
   marsTexture: null,
-  normalMap: null
+  normalMap: null,
 };
 
-const Mars = ({ 
+const Mars = ({
   craters = [],
-  onCraterClick, 
-  selectedId, 
-  showLines, 
+  onCraterClick,
+  selectedId,
+  selectedCrater = null,
+  showLines,
   isDarkMode,
   isInteractive,
   initialPosition = [0, 0, 0],
   scale = [1, 1, 1],
   featuresOpacity = 1,
-  hideMarsModel = false
+  hideMarsModel = false,
+  viewMode = VIEW_MODES.PLANET,
+  children
 }) => {
   const groupRef = useRef();
   const [texturesLoaded, setTexturesLoaded] = useState(false);
-  const { camera, viewport } = useThree();
+  const { gl } = useThree();
+
+  // 球面开洞：坑体的坑底低于坑缘，若坑底要真的凹进球面，
+  // 就必须在球面上挖掉对应位置，否则被闭合球体遮挡（穿模）。
+  // discard 逐片元执行，洞缘精度与球体分段数无关；
+  // uHoleCos > 1 时条件永不满足，即洞关闭，不需要重编译。
+  const holeUniforms = useMemo(() => ({
+    uHoleDir: { value: new THREE.Vector3(1, 0, 0) },
+    uHoleCos: { value: 2 },
+  }), []);
+
+  const injectHoleShader = useMemo(() => (shader) => {
+    shader.uniforms.uHoleDir = holeUniforms.uHoleDir;
+    shader.uniforms.uHoleCos = holeUniforms.uHoleCos;
+    shader.vertexShader = shader.vertexShader
+      .replace(
+        '#include <common>',
+        '#include <common>\nvarying vec3 vMarsLocalPos;'
+      )
+      .replace(
+        '#include <begin_vertex>',
+        '#include <begin_vertex>\nvMarsLocalPos = position;'
+      );
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        '#include <common>',
+        '#include <common>\nvarying vec3 vMarsLocalPos;\nuniform vec3 uHoleDir;\nuniform float uHoleCos;'
+      )
+      .replace(
+        '#include <clipping_planes_fragment>',
+        'if (dot(normalize(vMarsLocalPos), uHoleDir) > uHoleCos) discard;\n#include <clipping_planes_fragment>'
+      );
+  }, [holeUniforms]);
+
+  const holeOpen = viewMode !== VIEW_MODES.PLANET && Boolean(selectedCrater);
+
+  useEffect(() => {
+    if (holeOpen) {
+      holeUniforms.uHoleDir.value.set(...calculateCraterPosition(
+        selectedCrater.latitude,
+        selectedCrater.longitude,
+        1
+      ));
+      holeUniforms.uHoleCos.value = Math.cos(getCraterHoleAngle(selectedCrater));
+    } else {
+      holeUniforms.uHoleCos.value = 2;
+    }
+  }, [holeOpen, selectedCrater, holeUniforms]);
   
   // 使用 useTexture 替代 useLoader，并利用缓存
   useEffect(() => {
@@ -61,6 +116,25 @@ const Mars = ({
     
     loadTextures();
   }, [hideMarsModel]); // 添加hideMarsModel依赖，确保纹理在显示/隐藏时重新检查
+
+  useEffect(() => {
+    if (!texturesLoaded) return;
+
+    const maxAnisotropy = gl.capabilities.getMaxAnisotropy();
+    const colorTexture = textureCache.marsTexture;
+    const normalTexture = textureCache.normalMap;
+
+    colorTexture.colorSpace = THREE.SRGBColorSpace;
+    normalTexture.colorSpace = THREE.NoColorSpace;
+
+    [colorTexture, normalTexture].forEach((texture) => {
+      texture.minFilter = THREE.LinearMipmapLinearFilter;
+      texture.magFilter = THREE.LinearFilter;
+      texture.anisotropy = maxAnisotropy;
+      texture.generateMipmaps = true;
+      texture.needsUpdate = true;
+    });
+  }, [gl, texturesLoaded]);
   
   // 将 useMemo 移到条件判断之前
   const { gridGeometry, labels } = useMemo(() => {
@@ -68,24 +142,16 @@ const Mars = ({
     const vertices = [];
     const labels = [];
     
-    // 经线和经度标签
-    for (let i = -180; i < 180; i += 30) {  // 改为 < 180，避免重复
-      const theta = i * Math.PI / 180;
+    // 经线和经度标签。与陨石坑标记共用 calculateCraterPosition，
+    // 避免网格与坑点各自使用一套投影而互相错位。
+    for (let i = -180; i < 180; i += 30) {
       for (let j = -90; j <= 90; j++) {
-        const phi = j * Math.PI / 180;
-        const x = Math.cos(phi) * Math.cos(theta);
-        const y = Math.sin(phi);
-        const z = Math.cos(phi) * Math.sin(theta);
-        vertices.push(x, y, z);
+        vertices.push(...calculateCraterPosition(j, i));
       }
-      
+
       // 只在赤道位置添加经度标签
       labels.push({
-        position: [
-          1.1 * Math.cos(theta), 
-          0,
-          1.1 * Math.sin(theta)
-        ],
+        position: calculateCraterPosition(0, i, 1.1),
         text: `${i > 0 ? i + '°E' : i < 0 ? Math.abs(i) + '°W' : '0°'}`,
         type: 'longitude',
         scale: 0.8
@@ -94,39 +160,23 @@ const Mars = ({
     
     // 纬线和纬度标签
     for (let i = -90; i <= 90; i += 30) {
-      // 跳过赤道 (0度) 的标签，因为已经有经度的0度标签了
-      if (i === 0) {
-        // 仍然需要添加纬线的顶点
-        for (let j = -180; j <= 180; j++) {
-          const theta = j * Math.PI / 180;
-          const phi = i * Math.PI / 180;
-          const x = Math.cos(phi) * Math.cos(theta);
-          const y = Math.sin(phi);
-          const z = Math.cos(phi) * Math.sin(theta);
-          vertices.push(x, y, z);
-        }
-        continue; // 跳过添加标签
-      }
-      
-      const phi = i * Math.PI / 180;
       for (let j = -180; j <= 180; j++) {
-        const theta = j * Math.PI / 180;
-        const x = Math.cos(phi) * Math.cos(theta);
-        const y = Math.sin(phi);
-        const z = Math.cos(phi) * Math.sin(theta);
-        vertices.push(x, y, z);
+        vertices.push(...calculateCraterPosition(i, j));
       }
-      
+
+      // 跳过赤道 (0度) 的标签，因为已经有经度的0度标签了
+      if (i === 0) continue;
+
+      const isPole = i === 90 || i === -90;
+
       // 添加纬度标签，包括极点
       labels.push({
-        position: [
-          i === 90 || i === -90 ? 0 : 1.1 * Math.cos(phi),  // 极点位置特殊处理
-          1.1 * Math.sin(phi),
-          0
-        ],
+        position: isPole
+          ? [0, 1.1 * Math.sign(i), 0]
+          : calculateCraterPosition(i, 0, 1.1),
         text: `${i > 0 ? i + '°N' : Math.abs(i) + '°S'}`,
         type: 'latitude',
-        scale: i === 90 || i === -90 ? 0.6 : 0.8  // 极点标签稍小
+        scale: isPole ? 0.6 : 0.8  // 极点标签稍小
       });
     }
 
@@ -134,14 +184,57 @@ const Mars = ({
     return { gridGeometry: geometry, labels };
   }, []);
 
+  const handleSurfaceClick = (event) => {
+    if (!isInteractive || !Array.isArray(craters) || craters.length === 0) {
+      return;
+    }
+
+    if (event.delta > 4) {
+      return;
+    }
+
+    event.stopPropagation();
+
+    const localPoint = groupRef.current
+      ? groupRef.current.worldToLocal(event.point.clone())
+      : event.point.clone();
+    const hitDirection = localPoint.normalize();
+    let nearestIndex = -1;
+    let nearestDot = -Infinity;
+
+    craters.forEach((crater, index) => {
+      const craterDirection = new THREE.Vector3(...calculateCraterPosition(
+        crater.latitude,
+        crater.longitude,
+        1
+      )).normalize();
+      const dot = hitDirection.dot(craterDirection);
+
+      if (dot > nearestDot) {
+        nearestDot = dot;
+        nearestIndex = index;
+      }
+    });
+
+    if (nearestIndex >= 0) {
+      onCraterClick?.(craters[nearestIndex], nearestIndex);
+    }
+  };
+
   if (!texturesLoaded) return null;
 
   return (
     <group ref={groupRef} position={initialPosition} scale={scale}>
       {!hideMarsModel && (
-        <mesh>
-          <sphereGeometry args={[1, 64, 64]} />
-          <meshStandardMaterial map={textureCache.marsTexture} normalMap={textureCache.normalMap} />
+        <mesh onClick={handleSurfaceClick}>
+          <sphereGeometry args={[1, 96, 96]} />
+          <meshStandardMaterial
+            map={textureCache.marsTexture}
+            normalMap={textureCache.normalMap}
+            normalScale={new THREE.Vector2(0.42, 0.42)}
+            roughness={0.92}
+            onBeforeCompile={injectHoleShader}
+          />
         </mesh>
       )}
       {showLines && isInteractive && (
@@ -156,7 +249,7 @@ const Mars = ({
       {Array.isArray(craters) && craters.map((crater, index) => (
         <Crater 
           key={index} 
-          position={calculatePosition(crater.latitude, crater.longitude)}
+          position={calculateCraterPosition(crater.latitude, crater.longitude)}
           onClick={() => isInteractive && onCraterClick?.(crater, index)}
           isSelected={selectedId === index}
           isVisible={(selectedId === null || selectedId === index) && isInteractive}
@@ -172,6 +265,7 @@ const Mars = ({
           opacity={featuresOpacity}
         />
       )}
+      {children}
     </group>
   );
 };
@@ -238,6 +332,11 @@ const Crater = ({
 }) => {
   
   const setCursorType = useCursorStore(state => state.setType);
+  const handleClick = (e) => {
+    e.stopPropagation();
+    onClick?.(e);
+  };
+
   const handlePointerOver = (e) => {
     e.stopPropagation();
     setCursorType('hover');
@@ -301,9 +400,22 @@ const Crater = ({
 
   return (
     <group>
+      <mesh
+        position={position}
+        onClick={handleClick}
+        onPointerOver={handlePointerOver}
+        onPointerOut={handlePointerOut}
+      >
+        <sphereGeometry args={[0.055, 12, 12]} />
+        <meshBasicMaterial
+          transparent
+          opacity={0}
+          depthWrite={false}
+        />
+      </mesh>
       <mesh 
         position={position}
-        onClick={onClick}
+        onClick={handleClick}
         onPointerOver={handlePointerOver}
         onPointerOut={handlePointerOut}
       >
@@ -327,19 +439,6 @@ const Crater = ({
   );
 };
 
-const calculatePosition = (lat, lon) => {
-  // 交换经纬度的计算顺序
-  const latRad = (90 - lon) * (Math.PI / 180);  // 将纬度转换为与Y轴的夹角
-  const lonRad = -lat * (Math.PI / 180);        // 经度方向取反以匹配右手坐标系
-  
-  // 球面坐标转换为笛卡尔坐标
-  return [
-    Math.sin(latRad) * Math.cos(lonRad),  // x 坐标
-    Math.cos(latRad),                      // y 坐标 (北极为正)
-    Math.sin(latRad) * Math.sin(lonRad)    // z 坐标
-  ];
-};
-
 const MarsGlobe = ({ 
   craters = [],
   isDarkMode, 
@@ -351,9 +450,51 @@ const MarsGlobe = ({
   isInteractive = true,
   initialPosition = [0, 0, -20],
   scale = [1, 1, 1],
-  hideMarsModel = false
+  hideMarsModel = false,
+  viewMode = VIEW_MODES.PLANET,
+  simulation,
+  colony,
+  activeBase,
+  selectedColonyTool,
+  onColonyCellClick,
+  selectedTuberUse,
+  selectedIntervention,
+  onPlantInZone,
+  onAssignTuber,
+  onApplyIntervention,
 }) => {
   const [selectedId, setSelectedId] = useState(null);
+  const controlsRef = useRef();
+  const isCloseView = (
+    viewMode === VIEW_MODES.CRATER || viewMode === VIEW_MODES.HUMAN
+  );
+  const planetControlsEnabled = (
+    isInteractive && viewMode === VIEW_MODES.PLANET
+  );
+
+  // 近景主光位置：沿选中坑地表切平面以 38 度仰角斜射，
+  // 保证任何纬度的坑都有一致的浮雕光照。
+  const closeLightPosition = useMemo(() => {
+    if (!selectedCrater) return null;
+
+    const normal = new THREE.Vector3(...calculateCraterPosition(
+      selectedCrater.latitude,
+      selectedCrater.longitude,
+      1
+    ));
+    const tangent = new THREE.Vector3(0, 1, 0).cross(normal);
+
+    if (tangent.lengthSq() < 0.01) tangent.set(1, 0, 0);
+    tangent.normalize();
+
+    const elevation = THREE.MathUtils.degToRad(38);
+
+    return normal
+      .multiplyScalar(Math.sin(elevation))
+      .add(tangent.multiplyScalar(Math.cos(elevation)))
+      .multiplyScalar(10)
+      .toArray();
+  }, [selectedCrater]);
 
   // 当外部传入的 selectedCrater 为 null 时，重置内部选中状态
   useEffect(() => {
@@ -374,25 +515,81 @@ const MarsGlobe = ({
 
   return (
     <>
-      <ambientLight intensity={3} />
-      <pointLight position={[10, 10, 10]} />
-      <Mars 
-        craters={craters} 
+      {/* 近景：低环境光 + 斜射方向光。旧值 ambient 1.35 压倒方向光，
+          地形起伏没有明暗层次（灌白光）。方向光沿选中坑的地表切向
+          以约 38 度仰角斜射，每个坑都有浮雕感，且方向随坑连续。 */}
+      <ambientLight intensity={isCloseView ? 0.45 : 3} />
+      {isCloseView && closeLightPosition ? (
+        <directionalLight
+          position={closeLightPosition}
+          intensity={1.1}
+          color="#ffdfc0"
+        />
+      ) : (
+        <pointLight position={[10, 10, 10]} intensity={1} />
+      )}
+      <Mars
+        craters={craters}
         onCraterClick={(crater, index) => handleCraterClick(crater, index)}
         selectedId={selectedId}
-        showLines={showLines} 
+        selectedCrater={selectedCrater}
+        showLines={showLines}
         isDarkMode={isDarkMode}
-        isInteractive={isInteractive}
+        isInteractive={isInteractive && viewMode === VIEW_MODES.PLANET}
         initialPosition={initialPosition}
         scale={scale}
         hideMarsModel={hideMarsModel}
+        viewMode={viewMode}
+      >
+        {selectedCrater
+          && (
+            viewMode === VIEW_MODES.CRATER
+            || viewMode === VIEW_MODES.HUMAN
+          ) && (colony && activeBase ? (
+            <ColonyScene
+              crater={selectedCrater}
+              colony={colony}
+              base={activeBase}
+              selectedTool={selectedColonyTool}
+              onCellAction={onColonyCellClick}
+            />
+          ) : simulation && (
+            <CraterCultivationScene
+              crater={selectedCrater}
+              simulation={simulation}
+              selectedUse={selectedTuberUse}
+              selectedIntervention={selectedIntervention}
+              onPlantInZone={onPlantInZone}
+              onAssignTuber={onAssignTuber}
+              onApplyIntervention={onApplyIntervention}
+            />
+          ))}
+      </Mars>
+      <WorldCameraRig
+        controlsRef={controlsRef}
+        viewMode={viewMode}
+        selectedCrater={selectedCrater}
       />
       <OrbitControls 
-        enabled={isInteractive}
-        enableZoom={isInteractive}  
-        enableRotate={isInteractive}
-        enablePan={isInteractive}
+        ref={controlsRef}
+        enabled={planetControlsEnabled}
+        enableZoom={planetControlsEnabled}
+        enableRotate={planetControlsEnabled}
+        enablePan={false}
+        minDistance={viewMode === VIEW_MODES.PLANET ? 2.8 : 0.03}
+        maxDistance={viewMode === VIEW_MODES.PLANET ? 9 : 1.4}
+        dampingFactor={0.075}
+        enableDamping
       />
+      {isCloseView && (
+        <EffectComposer
+          multisampling={4}
+          enableNormalPass={false}
+        >
+          <CraterViewEffects sharpness={1.52} contrast={0.12} />
+          <SMAA />
+        </EffectComposer>
+      )}
     </>
   );
 };

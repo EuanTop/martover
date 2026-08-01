@@ -1,101 +1,21 @@
 import React, { useState, useEffect, Suspense, useRef } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { Canvas } from '@react-three/fiber';
-import { Html } from '@react-three/drei';
-import { useSpring, animated } from '@react-spring/three';
+import { useSpring } from '@react-spring/three';
 import CloudsComponent from './CloudsComponent';
 import MarsComponent from '../MarsGlobe/MarsComponent';
 import styles from './styles.module.css';
 import Panel from '../../Components/Panel';
 import ProgressBar from '../../Components/ProgressBar';
-import PotatoPlanet from '../PotatoPages/PotatoPlanet';
 import TypeShuffleText from '../../Components/TypeShuffle/TypeShuffle';
-import MarsGuideTooltips from '../MarsGlobe/MarsGuideTooltips';
 import Button from '../../Components/common/Button/Button';
-import VisShape from '../../Components/VisShape/VisShape';
-import RdOverlaySvg from '../../Components/RdOverlay/RdOverlaySvg';
-import { OverlayBackground } from '../../Components/OverlayLayers';
-
-// 浮现水滴组件 - 从火星坑底部浮现出类似土豆的变化小圆球，向上融入土豆
-const RisingDroplets = () => {
-  const droplets = [
-    { id: 0, delay: 0, x: -30, size: 12 },
-    { id: 1, delay: 0.8, x: 20, size: 10 },
-    { id: 2, delay: 1.6, x: -10, size: 14 },
-    { id: 3, delay: 2.4, x: 35, size: 11 },
-    { id: 4, delay: 3.2, x: -25, size: 9 },
-    { id: 5, delay: 0.4, x: 5, size: 13 },
-  ];
-
-  return (
-    <>
-      <div style={{
-        position: 'absolute',
-        bottom: '22vh',
-        left: '50%',
-        transform: 'translateX(-50%)',
-        width: '200px',
-        height: '300px',
-        zIndex: 19,
-        pointerEvents: 'none',
-      }}>
-        {droplets.map((droplet) => (
-          <div
-            key={droplet.id}
-            style={{
-              position: 'absolute',
-              bottom: '0',
-              left: `calc(50% + ${droplet.x}px)`,
-              width: `${droplet.size}px`,
-              height: `${droplet.size}px`,
-              borderRadius: '50%',
-              background: 'radial-gradient(ellipse at 30% 30%, rgba(255,180,120,0.9) 0%, rgba(200,100,50,0.8) 50%, rgba(150,70,30,0.7) 100%)',
-              boxShadow: '0 0 8px rgba(200,100,50,0.4)',
-              animation: `risingDroplet 4s ease-out infinite`,
-              animationDelay: `${droplet.delay}s`,
-              transform: 'scale(1)',
-            }}
-          />
-        ))}
-      </div>
-      
-      <style>{`
-        @keyframes risingDroplet {
-          0% {
-            transform: translateY(0) scale(0.3);
-            opacity: 0;
-            border-radius: 50%;
-          }
-          10% {
-            opacity: 0.8;
-            transform: translateY(-20px) scale(0.6);
-          }
-          30% {
-            transform: translateY(-80px) scale(0.9) scaleX(1.1);
-            border-radius: 45%;
-          }
-          50% {
-            transform: translateY(-150px) scale(1) scaleX(0.9);
-            border-radius: 50%;
-          }
-          70% {
-            transform: translateY(-220px) scale(0.8) scaleX(1.05);
-            opacity: 0.6;
-            border-radius: 48%;
-          }
-          90% {
-            transform: translateY(-280px) scale(0.4);
-            opacity: 0.2;
-          }
-          100% {
-            transform: translateY(-300px) scale(0);
-            opacity: 0;
-          }
-        }
-      `}</style>
-    </>
-  );
-};
+import GameHUD from '../../game/ui/GameHUD';
+import ColonyHUD from '../../game/ui/ColonyHUD';
+import { POTATO_STATUS, TOOL_MODES } from '../../game/economy/colonyState';
+import {
+  TUBER_USES,
+  VIEW_MODES,
+} from '../../game/simulation/breedingSimulation';
 
 // 添加卡片内容数据
 const introCards = [
@@ -123,9 +43,32 @@ const CloudDownPage = ({
   showLines, 
   setShowLines, 
   selectedCrater,
-  setSelectedCrater,
+  onCraterSelect,
+  onCraterClear,
+  progressStep,
+  viewMode,
+  simulation,
+  human,
+  generation,
+  lineage,
+  onBeginBreeding,
+  onPlantInZone,
+  onApplyIntervention,
+  onHarvest,
+  onAssignTuber,
+  onFeedHuman,
+  onNextGeneration,
+  onRecover,
+  preservedSamples,
+  outcome,
+  colony,
+  activeBase,
+  onColonyCellAction,
+  onColonyConvertSeeds,
+  onColonyDeliverContract,
+  onColonyRestart,
+  onSetClockSpeed,
   craterData,
-  potatoData,
   appReady
 }) => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -156,19 +99,18 @@ const CloudDownPage = ({
   }, [skipIntro, setSearchParams]);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [showFlash, setShowFlash] = useState(false);
-  const [progressStep, setProgressStep] = useState(1); // 默认第一关
-  const [showPotato, setShowPotato] = useState(false);
   // 将这个状态移动到组件顶部
   const [marsFullyRendered, setMarsFullyRendered] = useState(skipIntro);
   const [hideMarsModel, setHideMarsModel] = useState(false);
-  // 控制火星坑和水滴的显示（当进入 MRI 视图时隐藏）
-  const [hideCraterAndDroplets, setHideCraterAndDroplets] = useState(false);
+  const [selectedTuberUse, setSelectedTuberUse] = useState(TUBER_USES.SEED);
+  const [selectedIntervention, setSelectedIntervention] = useState(null);
+  const [selectedColonyTool, setSelectedColonyTool] = useState(null);
 
-  // PotatoPlanet 模式变化回调
-  const handlePotatoModeChange = ({ windyMode, showMRI }) => {
-    // 当进入 windyMode 或 showMRI 时，隐藏火星坑和水滴
-    setHideCraterAndDroplets(windyMode || showMRI);
-  };
+  useEffect(() => {
+    if (viewMode !== VIEW_MODES.CRATER || simulation?.stage !== 'growing') {
+      setSelectedIntervention(null);
+    }
+  }, [simulation?.stage, viewMode]);
 
   // 修改相机位置的初始值 - 根据是否跳过介绍决定初始位置
   const [cameraPosition, setCameraPosition] = useSpring(() => ({
@@ -317,17 +259,41 @@ const TimestampDisplay = ({ isDarkMode }) => {
   // 修改关闭介绍卡片的处理函数 - 移除持久层存储
   const handleIntroComplete = () => {
     setShowIntro(false);
-    setProgressStep(1);
     // 停止信封音乐，播放降落音乐
     targetsAudioRef.current?.pause();
     welcomeAudioRef.current?.play().catch(() => {});
     handleExploreClick(); // 直接触发探索动画
   };
 
-  const navigate = useNavigate();
   const handleSelectCrater = () => {
-    setProgressStep(2);
-    setShowPotato(true);
+    onBeginBreeding();
+  };
+
+  const handleApplyIntervention = (type) => {
+    onApplyIntervention(type);
+    setSelectedIntervention(null);
+  };
+
+  // 地块点击：优先用当前选中的工具；未选工具时按格子状态取
+  // 最自然的动作（成熟→收获，空地→种植，未开垦→开垦）。
+  const handleColonyCellClick = (cellId) => {
+    if (!activeBase) return;
+
+    if (selectedColonyTool) {
+      onColonyCellAction(cellId, selectedColonyTool);
+      return;
+    }
+
+    const cell = activeBase.cells.find((item) => item.id === cellId);
+    if (!cell) return;
+
+    if (cell.isPlantingBed && activeBase.potato?.status === POTATO_STATUS.READY) {
+      onColonyCellAction(cellId, TOOL_MODES.HARVEST);
+    } else if (!cell.cleared) {
+      onColonyCellAction(cellId, TOOL_MODES.CLEAR);
+    } else if (cell.isPlantingBed && !activeBase.potato) {
+      onColonyCellAction(cellId, TOOL_MODES.PLANT);
+    }
   };
 
   // 如果应用尚未准备好，不显示任何内容
@@ -338,12 +304,15 @@ const TimestampDisplay = ({ isDarkMode }) => {
   
   // 组件的渲染部分
   return (
-    <div className={`${styles.container} ${isDarkMode ? 'dark-mode' : ''}`} style={{ background: isDarkMode ? '#000000' : '#F57435' }}>
+    <div
+      className={`${styles.container} ${isDarkMode ? 'dark-mode' : ''}`}
+      data-crater-count={craterData.length}
+      style={{ background: isDarkMode ? '#000000' : '#F57435' }}
+    >
       {/* 顶部关卡进度条 - 只在火星页面显示，不在介绍页面显示 */}
-      {!showIntro && !showPotato && <ProgressBar currentStep={progressStep} isDarkMode={isDarkMode} />}
+      {!showIntro && <ProgressBar currentStep={progressStep} isDarkMode={isDarkMode} />}
       
-      {!showPotato && (
-        <>
+      <>
           {/* 顶部导航按钮 */}
           <Link 
             to="/grid" 
@@ -389,7 +358,16 @@ const TimestampDisplay = ({ isDarkMode }) => {
             />
           )}
 
-          <Canvas>
+          <Canvas
+            // 夹住 devicePixelRatio。Retina 屏默认按 2 甚至 3 倍渲染，
+            // 叠加后处理链后每帧成本翻数倍；2 已经足够清晰。
+            dpr={[1, 2]}
+            className={`${styles.gameCanvas} ${
+              viewMode === VIEW_MODES.HUMAN
+                ? styles.gameCanvasWithHuman
+                : ''
+            }`}
+          >
             <Suspense fallback={null}>
               {/* 这里改进条件逻辑 */}
               {(!showMars || isTransitioning) && (
@@ -405,9 +383,20 @@ const TimestampDisplay = ({ isDarkMode }) => {
                 isTransitioning={isTransitioning}
                 isDarkMode={isDarkMode}
                 selectedCrater={selectedCrater}
-                setSelectedCrater={setSelectedCrater}
+                setSelectedCrater={onCraterSelect}
                 craterData={craterData}
                 hideMarsModel={hideMarsModel}
+                viewMode={viewMode}
+                simulation={simulation}
+                colony={colony}
+                activeBase={activeBase}
+                selectedColonyTool={selectedColonyTool}
+                onColonyCellClick={handleColonyCellClick}
+                selectedTuberUse={selectedTuberUse}
+                selectedIntervention={selectedIntervention}
+                onPlantInZone={onPlantInZone}
+                onAssignTuber={onAssignTuber}
+                onApplyIntervention={handleApplyIntervention}
                 onFinishedRendering={() => {
                   console.log("[Mars] 渲染完成，准备显示提示");
                   setMarsFullyRendered(true);
@@ -417,11 +406,11 @@ const TimestampDisplay = ({ isDarkMode }) => {
           </Canvas>
           
           {/* 将 Panel 移到 Canvas 外部 */}
-          {selectedCrater && (
+          {selectedCrater && viewMode === VIEW_MODES.PLANET && (
             <Panel 
               isDarkMode={isDarkMode} 
               onClose={() => {
-                setSelectedCrater(null);
+                onCraterClear();
                 const mars = document.querySelector('#mars-globe');  // 假设Mars组件有id
                 if (mars) {
                   mars.dispatchEvent(new CustomEvent('resetSelection'));
@@ -434,13 +423,44 @@ const TimestampDisplay = ({ isDarkMode }) => {
             />
           )}
           
-          {/* 添加我们的科幻提示组件 */}
-          <MarsGuideTooltips
-            showMars={showMars}
-            hasFinishedMoving={marsFullyRendered}
-            selectedCrater={selectedCrater}
-            isDarkMode={isDarkMode}
-          />
+          {!showIntro && showMars && !isTransitioning && colony && (
+            <ColonyHUD
+              colony={colony}
+              base={activeBase}
+              human={human}
+              generation={generation}
+              selectedTool={selectedColonyTool}
+              onSelectTool={setSelectedColonyTool}
+              onConvertSeeds={onColonyConvertSeeds}
+              onDeliverContract={onColonyDeliverContract}
+              onRestart={onColonyRestart}
+              onSetClockSpeed={onSetClockSpeed}
+            />
+          )}
+
+          {!showIntro && showMars && !isTransitioning && !colony && (
+            <GameHUD
+              viewMode={viewMode}
+              selectedCrater={selectedCrater}
+              simulation={simulation}
+              human={human}
+              generation={generation}
+              lineage={lineage}
+              selectedUse={selectedTuberUse}
+              selectedIntervention={selectedIntervention}
+              onSelectUse={setSelectedTuberUse}
+              onSelectIntervention={setSelectedIntervention}
+              onPlantInZone={onPlantInZone}
+              onApplyIntervention={handleApplyIntervention}
+              onHarvest={onHarvest}
+              onAssignTuber={onAssignTuber}
+              onFeedHuman={onFeedHuman}
+              onNextGeneration={onNextGeneration}
+              onRecover={onRecover}
+              preservedSamples={preservedSamples}
+              outcome={outcome}
+            />
+          )}
           
           {/* 修改 CloudDownPage 组件中的卡片部分 */}
           {showIntro && (
@@ -554,59 +574,6 @@ const TimestampDisplay = ({ isDarkMode }) => {
             </div>
           )}
         </>
-      )}
-      {showPotato && (
-        <>
-          {/* 火星坑 SVG 动态视觉背景 - 进入 MRI 视图时隐藏 */}
-          {selectedCrater && !hideCraterAndDroplets && (
-            <div style={{
-              position: 'absolute',
-              bottom: '-70vh',
-              left: '50%',
-              transform: 'translateX(-50%)',
-              width: '150vw',
-              height: '150vw',
-              maxWidth: '1200px',
-              maxHeight: '1200px',
-              zIndex: 1,
-              opacity: 0.85,
-              pointerEvents: 'none',
-              perspective: '800px',
-              perspectiveOrigin: '50% 30%',
-              transition: 'opacity 0.6s ease-out',
-            }}>
-              <div style={{
-                width: '100%',
-                height: '100%',
-                transform: 'rotateX(55deg)',
-                transformStyle: 'preserve-3d',
-              }}>
-                <VisShape crater={selectedCrater} isDarkMode={false} size={1} />
-              </div>
-            </div>
-          )}
-
-          {/* 射线坑覆盖层 - 进入 MRI 视图时隐藏 */}
-          {selectedCrater?.hasRd && !hideCraterAndDroplets && (
-            <RdOverlaySvg visible={true} />
-          )}
-
-          {/* 顶层颜色蒙版 */}
-          <OverlayBackground />
-
-          {/* 浮现水滴效果 - 进入 MRI 视图时隐藏 */}
-          {!hideCraterAndDroplets && <RisingDroplets />}
-
-          {/* 主内容区域 - PotatoPlanet */}
-          <div style={{ position: 'relative', zIndex: 20, width: '100%', height: '100%' }}>
-            <PotatoPlanet
-              potatoData={potatoData}
-              selectedCrater={selectedCrater}
-              onModeChange={handlePotatoModeChange}
-            />
-          </div>
-        </>
-      )}
     </div>
   );
 };

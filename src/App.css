@@ -44,11 +44,6 @@
   pointer-events: none;
 }
 
-/* 排除3D画布影响 */
-canvas {
-  pointer-events: none;
-}
-
 /* 交互元素穿透处理 */
 .icon-hover-target {
   pointer-events: auto;

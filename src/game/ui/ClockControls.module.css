@@ -1,0 +1,59 @@
+/* 时间控制：嵌在 ColonyHUD 顶栏的 SOL 格左侧，不是独立浮层。 */
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-right: 10px;
+  border-right: 1px solid rgba(86, 41, 19, 0.5);
+}
+
+.debugLabel {
+  color: rgba(86, 41, 19, 0.72);
+  font-family: monospace;
+  font-size: 9px;
+  letter-spacing: 0;
+  writing-mode: vertical-rl;
+}
+
+.speedButton {
+  border: 1px solid var(--ink, #562913);
+  background: rgba(255, 231, 214, 0.18);
+  color: var(--ink, #562913);
+  font-size: 12px;
+  padding: 0 6px;
+  cursor: pointer;
+  border-radius: 0;
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.speeds {
+  display: flex;
+  gap: 2px;
+}
+
+.speedButton {
+  min-width: 30px;
+  justify-content: center;
+  font-family: monospace;
+}
+
+.speedButton:hover {
+  background: rgba(86, 41, 19, 0.16);
+}
+
+.speedActive {
+  background: var(--ink, #562913);
+  color: #ffe9da;
+}
+
+.speedActive:hover {
+  background: var(--ink, #562913);
+}
+
+.speedButton:disabled {
+  opacity: 0.45;
+  cursor: default;
+}

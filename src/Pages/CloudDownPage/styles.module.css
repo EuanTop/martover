@@ -2,6 +2,17 @@
   width: 100vw;
   height: 100vh;
   position: relative;
+  overflow: hidden;
+}
+
+.gameCanvas {
+  pointer-events: auto !important;
+  touch-action: none;
+  transition: width 520ms ease, height 520ms ease;
+}
+
+.gameCanvasWithHuman {
+  width: 65vw !important;
 }
 
 .exploreButton {
@@ -31,4 +42,11 @@
 
 .exploreButton:hover {
   transform: translate(-50%, -50%) scale(1.05);
+}
+
+@media (max-width: 820px) {
+  .gameCanvasWithHuman {
+    width: 100vw !important;
+    height: 44vh !important;
+  }
 }

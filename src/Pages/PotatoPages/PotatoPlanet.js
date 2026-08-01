@@ -1,6 +1,6 @@
 import React, { Suspense, useRef, useState, useEffect, useMemo } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
-import { PerspectiveCamera, Environment, MeshDistortMaterial, ContactShadows, Text, Billboard, Clouds, Cloud } from '@react-three/drei'
+import { PerspectiveCamera, Environment, ContactShadows, Text, Billboard, Clouds, Cloud } from '@react-three/drei'
 import { useSpring } from '@react-spring/core'
 import { a } from '@react-spring/three'
 import * as THREE from 'three'
@@ -12,12 +12,13 @@ import Part3Gallery from '../Part3Gallery/Part3Gallery'; // 添加这一行导�
 import MRIViewer from '../../Components/PotatoSliceViewer/MRIViewer';
 import { MRISlice } from '../MRIPotatoPage/MRIPotatoPage';
 import { getCraterInfluences, sortPotatoesByInfluence } from '../../utils/breedingLogic';
+import { GAME_PHASES } from '../../game/session/gamePhases';
 import { EnvironmentEffects, EnvironmentIcon } from '../../Components/EnvironmentEffects/EnvironmentEffects';
 import VisShape from '../../Components/VisShape/VisShape';
 import RdOverlaySvg from '../../Components/RdOverlay/RdOverlaySvg';
 import { OverlayBackground } from '../../Components/OverlayLayers';
-
-const AnimatedMaterial = a(MeshDistortMaterial)
+import PlantingConsole from '../../game/planting/PlantingConsole';
+import PotatoSpecimen from '../../Components/PotatoSpecimen/PotatoSpecimen';
 
 // 创建文字纹理 - 支持逐行显现效果
 function createTextTexture(text, startTime = null) {
@@ -225,10 +226,9 @@ function Blob({ currentPotatoData, windyMode, visualParams }) {
         }
     })
 
-    const [{ wobble, color, env }] = useSpring(
+    const [{ wobble, color }] = useSpring(
         {
             wobble: hovered ? 1.05 : 1,
-            env: 1,
             color: '#fff',
             config: { mass: 2, tension: 1000, friction: 10 }
         },
@@ -251,42 +251,24 @@ function Blob({ currentPotatoData, windyMode, visualParams }) {
                 <a.pointLight ref={light} position-z={-15} intensity={1.5} color="#fff" />
             </PerspectiveCamera>
             <group>
-                {/* 黑色描边 - 非常细的描边 */}
-                <a.mesh
-                    ref={outlineRef}
-                    scale={wobble.to(w => w * 1.005)}
-                >
-                    <sphereGeometry args={[1, 64, 64]} />
-                    <MeshDistortMaterial
-                        color="#000000"
-                        side={THREE.BackSide}
-                        distort={params.distort}
-                        speed={params.speed}
-                        transparent
-                        opacity={windyMode ? 0 : 1}
-                    />
-                </a.mesh>
-                
-                {/* 主土豆mesh */}
-                <a.mesh
-                    ref={sphere}
+                <PotatoSpecimen
+                    animated
+                    meshRef={sphere}
+                    outlineRef={outlineRef}
                     scale={wobble}
+                    outlineScale={wobble.to(w => w * 1.005)}
+                    color={color}
+                    map={textTexture}
+                    opacity={windyMode ? 0 : 0.9}
+                    outlineOpacity={windyMode ? 0 : 1}
+                    metalness={params.metalness}
+                    roughness={0}
+                    distort={params.distort}
+                    speed={params.speed}
+                    geometryDetail={64}
                     onPointerOver={() => setHovered(true)}
-                    onPointerOut={() => setHovered(false)}>
-                    <sphereGeometry args={[1, 64, 64]} />
-                    <AnimatedMaterial
-                        color={color}
-                        envMapIntensity={env}
-                        clearcoat={1}
-                        clearcoatRoughness={0}
-                        metalness={params.metalness}
-                        distort={params.distort}
-                        speed={params.speed}
-                        map={textTexture}
-                        transparent
-                        opacity={windyMode ? 0 : 0.9}
-                    />
-                </a.mesh>
+                    onPointerOut={() => setHovered(false)}
+                />
                 
                 {/* 不再使用Three.js的Text组件，改为传递textContent到外部 */}
             </group>
@@ -425,16 +407,25 @@ function CloudsComponent({ windyMode, showWindImage, coverMode, onCloudGone, isB
 
 // 新增Part3Gallery组件
 
-const PotatoPlanet = ({ potatoData, selectedCrater, onModeChange }) => {
-    const [progressStep, setProgressStep] = useState(() => {
-        // 获取已达到的最高进度
-        return Number(localStorage.getItem('mars-highest-progress-step')) || 2; // 默认为第2步
-    });
-
+const PotatoPlanet = ({
+    potatoData,
+    selectedCrater,
+    onModeChange,
+    gamePhase,
+    planting,
+    onConfigurePlanting,
+    onStartPlanting,
+    onAdvancePlanting,
+    onChooseIntervention,
+    onHarvestPlanting,
+    onUpdateAllocation,
+    onCompleteBreeding,
+}) => {
     // 育种逻辑状态
     const [sortedPotatoes, setSortedPotatoes] = useState([]);
     const [influences, setInfluences] = useState([]);
     const [primaryInfluence, setPrimaryInfluence] = useState(null);
+    const [currentIndex, setCurrentIndex] = useState(0)
 
     // 初始化：计算环境因子并排序土豆
     useEffect(() => {
@@ -457,13 +448,34 @@ const PotatoPlanet = ({ potatoData, selectedCrater, onModeChange }) => {
 
     // 使用 sortedPotatoes 替代 potatoData 进行渲染
     const displayPotatoes = sortedPotatoes.length > 0 ? sortedPotatoes : potatoData;
+    const isGameLoop = Boolean(planting);
+    const currentVisualPotato = useMemo(() => {
+        const basePotato = displayPotatoes?.[currentIndex] || potatoData?.[0] || {};
+
+        if (!planting) return basePotato;
+
+        const latestEvent = planting.growthEvents?.[planting.growthEvents.length - 1];
+        const result = planting.harvestResult;
+        const phaseText = planting.sol === 0
+            ? '等待投入种薯'
+            : latestEvent?.text || '生长记录正在生成';
+
+        return {
+            ...basePotato,
+            specialParam: result?.phenomenon || phaseText,
+            specialParamEn: result?.sampleId || `G${planting.generation} / SOL ${planting.sol}`,
+            specialParamDetails: result?.cost || '本代性状尚未形成，继续观察坑内压力。',
+            englishDescription: result
+                ? `Harvested ${result.tuberCount} tubers at Sol ${result.harvestSol}. Stability ${result.stability}, reproduction ${result.reproduction}, environmental expression ${result.expression}.`
+                : phaseText,
+        };
+    }, [displayPotatoes, currentIndex, planting, potatoData]);
 
     // 直接使用 selectedCrater（已经是处理过的格式，包含所有属性）
     // selectedCrater 来自 CraterDataProvider，已包含：
     // internalMorph, layerNumber, ejcSvg, rimDegradation, ejectaDegradation, floorDegradation, hasRd 等
     const visShapeCrater = selectedCrater;
 
-    const [currentIndex, setCurrentIndex] = useState(0)
     const [isDarkMode, setIsDarkMode] = useState(false)
     const [isPlaying, setIsPlaying] = useState(false)
     const [windyMode, setWindyMode] = useState(false)
@@ -475,7 +487,7 @@ const PotatoPlanet = ({ potatoData, selectedCrater, onModeChange }) => {
     const [showWindImage, setShowWindImage] = useState(false)
     const [imgIn, setImgIn] = useState(false)
     const [maskProgress, setMaskProgress] = useState(0)
-    const [showPart3, setShowPart3] = useState(false)
+    const showPart3 = gamePhase === GAME_PHASES.PRODUCTION
     const [confirmHover, setConfirmHover] = useState(false);
     const [backHover, setBackHover] = useState(false); // 添加返回按钮悬停状态
     const [defineHover, setDefineHover] = useState(false); // 添加"认定优秀品种"按钮悬停状态
@@ -492,9 +504,9 @@ const PotatoPlanet = ({ potatoData, selectedCrater, onModeChange }) => {
     }, [windyMode, showMRI, onModeChange]);
 
     useEffect(() => {
-        if (displayPotatoes && displayPotatoes[currentIndex]) {
+        if (currentVisualPotato) {
             // 直接更新功能文本状态
-            const data = displayPotatoes[currentIndex];
+            const data = currentVisualPotato;
             let text = "未知土豆";
             
             if (data.specialParam) {
@@ -511,7 +523,7 @@ const PotatoPlanet = ({ potatoData, selectedCrater, onModeChange }) => {
             
             setPotatoFeatureText(text);
         }
-    }, [currentIndex, potatoData]);
+    }, [currentVisualPotato]);
     
     // 激活 windyMode 后延迟显示图片
     useEffect(() => {
@@ -631,20 +643,16 @@ const PotatoPlanet = ({ potatoData, selectedCrater, onModeChange }) => {
     // 确认按钮点击
 // 修改确认按钮点击处理函数
 function handleConfirm() {
-    // 获取当前最高进度
-    const currentHighest = Number(localStorage.getItem('mars-highest-progress-step')) || 2;
-    // 如果第3步更高，则更新最高进度
-    if (3 > currentHighest) {
-        localStorage.setItem('mars-highest-progress-step', '3');
-    }
-    // 保存当前进度
-    localStorage.setItem('mars-progress-step', '3');
-    
-    // 更新状态
-    setProgressStep(3);
-    // 显示第3部分
-    setShowPart3(true);
+    onCompleteBreeding(displayPotatoes[currentIndex]);
 }
+
+    const handleInspectResult = () => {
+        setWindyMode(true);
+        setCoverMode(true);
+        setShowMRI(true);
+        setMriMode('transverse');
+        setMriState('idle');
+    };
 
     // 返回按钮的点击处理函数
     const handleBackClick = () => {
@@ -758,7 +766,7 @@ function handleConfirm() {
                 }
             </div> */}
 
-                        {!windyMode && (
+            {!windyMode && (
                 <div 
                     style={{
                         position: 'fixed',
@@ -817,7 +825,7 @@ function handleConfirm() {
             )}
 
             {/* 左箭头 */}
-            {currentIndex > 0 && (
+            {!isGameLoop && currentIndex > 0 && (
                 <LeftOutlined
                     style={{ ...arrowStyle, left: '20px', opacity: windyMode ? 0 : 1, pointerEvents: windyMode ? 'none' : 'auto', transition: 'opacity 0.6s' }}
                     onClick={() => {
@@ -828,7 +836,7 @@ function handleConfirm() {
             )}
 
             {/* 右箭头 */}
-            {currentIndex < displayPotatoes.length - 1 && (
+            {!isGameLoop && currentIndex < displayPotatoes.length - 1 && (
                 <RightOutlined
                     style={{ ...arrowStyle, right: '20px', opacity: windyMode ? 0 : 1, pointerEvents: windyMode ? 'none' : 'auto', transition: 'opacity 0.6s' }}
                     onClick={() => {
@@ -839,6 +847,7 @@ function handleConfirm() {
             )}
 
             {/* 滑动条 */}
+            {!isGameLoop && (
             <div style={{ ...sliderContainerStyle, opacity: windyMode ? 0 : 1, pointerEvents: windyMode ? 'none' : 'auto', transition: 'opacity 0.6s' }}>
                 <ConfigProvider
                     theme={{
@@ -861,8 +870,10 @@ function handleConfirm() {
                     />
                 </ConfigProvider>
             </div>
+            )}
 
             {/* 认定优秀品种按钮 */}
+            {!isGameLoop && (
             <button
                 style={{
                     position: 'fixed',
@@ -886,18 +897,26 @@ function handleConfirm() {
                     justifyContent: 'center',
                     userSelect: 'none',
                 }}
-                onClick={() => {
-                    setWindyMode(true);
-                    setCoverMode(true);
-                    // Immediately show MRI (behind clouds)
-                    setShowMRI(true);
-                    setMriMode('transverse'); // Start with transverse
-                    setMriState('idle');
-                    // Animation is now handled by CloudsComponent onCloudGone callback
-                }}
+                onClick={handleInspectResult}
                 onMouseEnter={() => setDefineHover(true)}
                 onMouseLeave={() => setDefineHover(false)}
             >认定优秀品种</button>
+            )}
+
+            {!windyMode && planting && (
+                <PlantingConsole
+                    planting={planting}
+                    selectedCrater={selectedCrater}
+                    onConfigure={onConfigurePlanting}
+                    onStart={onStartPlanting}
+                    onAdvance={onAdvancePlanting}
+                    onIntervention={onChooseIntervention}
+                    onHarvest={onHarvestPlanting}
+                    onUpdateAllocation={onUpdateAllocation}
+                    onInspect={handleInspectResult}
+                    onComplete={handleConfirm}
+                />
+            )}
             
             {/* Canvas始终渲染云朵，MRI图片飘入时只隐藏Blob和其他内容 */}
             <Canvas gl={{ antialias: true }} style={{ pointerEvents: 'none', position: 'relative', zIndex: 20 }}>
@@ -919,7 +938,7 @@ function handleConfirm() {
                     {!windyMode && !showMRI && (
                         <>
                             <Blob
-                                currentPotatoData={displayPotatoes[currentIndex]}
+                                currentPotatoData={currentVisualPotato}
                                 windyMode={windyMode}
                                 visualParams={primaryInfluence?.visualParams}
                             />
@@ -953,7 +972,7 @@ function handleConfirm() {
             </Canvas>
             
             {/* MRI Info Panel - Right Side - 云移出后渐显 */}
-            {showMRI && displayPotatoes && displayPotatoes[currentIndex] && (
+            {showMRI && currentVisualPotato && (
                 <div style={{
                     position: 'absolute',
                     top: '50%',
@@ -974,10 +993,10 @@ function handleConfirm() {
                     {/* 标题区域 - 固定不滚动 */}
                     <div style={{ flexShrink: 0 }}>
                         <h1 style={{ fontSize: '2.5rem', fontWeight: 'bold', marginBottom: '1rem', lineHeight: '1.1' }}>
-                            {displayPotatoes[currentIndex].specialParam}
+                            {currentVisualPotato.specialParam}
                         </h1>
                         <h2 style={{ fontSize: '1.2rem', fontWeight: '300', marginBottom: '1.5rem', opacity: 0.8 }}>
-                            {displayPotatoes[currentIndex].specialParamEn}
+                            {currentVisualPotato.specialParamEn}
                         </h2>
                     </div>
                     
@@ -992,14 +1011,14 @@ function handleConfirm() {
                         <div style={{ marginBottom: '1.5rem' }}>
                             <p style={{ fontSize: '0.9rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>DETAILS</p>
                             <p style={{ fontSize: '1.1rem' }}>
-                                {displayPotatoes[currentIndex].specialParamDetails}
+                                {currentVisualPotato.specialParamDetails}
                             </p>
                         </div>
                         
                         <div>
                             <p style={{ fontSize: '0.9rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>DESCRIPTION</p>
                             <p style={{ fontSize: '1rem', lineHeight: '1.6', opacity: 0.9 }}>
-                                {displayPotatoes[currentIndex].englishDescription}
+                                {currentVisualPotato.englishDescription}
                             </p>
                         </div>
                     </div>
@@ -1007,7 +1026,7 @@ function handleConfirm() {
             )}
 
             {/* 环境影响属性列表 - 极简风格 */}
-            {!windyMode && primaryInfluence && (
+            {!isGameLoop && !windyMode && primaryInfluence && (
                 <div style={{
                     position: 'fixed',
                     top: '100px',
@@ -1061,7 +1080,7 @@ function handleConfirm() {
                 </div>
             )}
 
-            {windyMode && showWindImage && !showPart3 && (
+            {!isGameLoop && windyMode && showWindImage && !showPart3 && (
                 <button
                     style={{
                         position: 'fixed',

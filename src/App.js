@@ -7,8 +7,11 @@ import PotatoGrid from './Pages/PotatoPages/PotatoGrid';
 import CloudDownPage from './Pages/CloudDownPage/CloudDownPage';
 import Part3Gallery from './Pages/Part3Gallery/Part3Gallery';
 import MRIPotatoPage from './Pages/MRIPotatoPage/MRIPotatoPage';
-import Step2TestPage from './Pages/Test/Step2TestPage'; // 导入测试页面
 import { useDataLoader } from './hooks/useDataLoader';
+import {
+  GameSessionProvider,
+  useGameSession,
+} from './game/session/GameSessionContext';
 
 // 加载消息组件
 const LoadingMessage = ({ children }) => (
@@ -19,7 +22,7 @@ const LoadingMessage = ({ children }) => (
   </div>
 );
 
-const App = () => {
+const AppRoutes = () => {
   // 使用数据加载钩子
   const {
     isLoading,
@@ -33,7 +36,35 @@ const App = () => {
   // 状态
   const [isDarkMode, setIsDarkMode] = React.useState(false);
   const [showLines, setShowLines] = React.useState(true);
-  const [selectedCrater, setSelectedCrater] = React.useState(null);
+  const {
+    phase,
+    progressStep,
+    viewMode,
+    selectedCrater,
+    simulation,
+    human,
+    generation,
+    lineage,
+    selectCrater,
+    clearCrater,
+    beginBreeding,
+    plantInZone,
+    applyIntervention,
+    harvest,
+    assignTuber,
+    feedHuman,
+    startNextGeneration,
+    recoverFromFailure,
+    preservedSamples,
+    outcome,
+    colony,
+    activeBase,
+    colonyCellAction,
+    colonyConvertSeeds,
+    colonyDeliverContract,
+    colonyRestart,
+    setClockSpeed,
+  } = useGameSession();
 
   // 显示加载状态
   if (isLoading) {
@@ -59,10 +90,33 @@ const App = () => {
                 showLines={showLines}
                 setShowLines={setShowLines}
                 selectedCrater={selectedCrater}
-                setSelectedCrater={setSelectedCrater}
-                craterData={craterData?.preview || []}
-                potatoData={potatoData}
-                appReady={appReady} 
+                onCraterSelect={selectCrater}
+                onCraterClear={clearCrater}
+                progressStep={progressStep}
+                viewMode={viewMode}
+                simulation={simulation}
+                human={human}
+                generation={generation}
+                lineage={lineage}
+                onBeginBreeding={beginBreeding}
+                onPlantInZone={plantInZone}
+                onApplyIntervention={applyIntervention}
+                onHarvest={harvest}
+                onAssignTuber={assignTuber}
+                onFeedHuman={feedHuman}
+                onNextGeneration={startNextGeneration}
+                onRecover={recoverFromFailure}
+                preservedSamples={preservedSamples}
+                outcome={outcome}
+                colony={colony}
+                activeBase={activeBase}
+                onColonyCellAction={colonyCellAction}
+                onColonyConvertSeeds={colonyConvertSeeds}
+                onColonyDeliverContract={colonyDeliverContract}
+                onColonyRestart={colonyRestart}
+                onSetClockSpeed={setClockSpeed}
+                craterData={craterData?.available || []}
+                appReady={appReady}
               />
             </>
           } 
@@ -70,7 +124,13 @@ const App = () => {
         <Route 
           path="/grid" 
           element={
-            <CraterGrid craters={craterData?.full || []} isDarkMode={isDarkMode} />
+            <CraterGrid
+              craters={craterData?.available || []}
+              isDarkMode={isDarkMode}
+              selectedCrater={selectedCrater}
+              onCraterSelect={selectCrater}
+              onCraterClear={clearCrater}
+            />
           }
         />
         <Route 
@@ -89,21 +149,15 @@ const App = () => {
           path="/mriPotato"
           element={<MRIPotatoPage />}
         />
-        {/* Step2测试路由已合并到主流程，注释掉 */}
-        {/* <Route
-          path="/step2"
-          element={
-            <Step2TestPage
-              potatoData={potatoData}
-              craterData={craterData?.preview || []}
-              selectedCrater={selectedCrater}
-              setSelectedCrater={setSelectedCrater}
-            />
-          }
-        /> */}
       </Routes>
     </Router>
   );
 };
+
+const App = () => (
+  <GameSessionProvider>
+    <AppRoutes />
+  </GameSessionProvider>
+);
 
 export default App;

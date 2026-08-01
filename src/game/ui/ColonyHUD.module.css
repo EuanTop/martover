@@ -1,0 +1,833 @@
+.hud {
+  --ink: #562913;
+  --panel: rgba(219, 81, 33, 0.2);
+  --panel-strong: rgba(229, 91, 40, 0.34);
+  --radiation-line: rgba(255, 221, 197, 0.62);
+  position: fixed;
+  z-index: 60;
+  color: var(--ink);
+  pointer-events: auto;
+  font-size: 12px;
+}
+
+.topBar,
+.forecast,
+.contractCard,
+.buildPalette,
+.humanMonitor,
+.toolbar,
+.factoryChain,
+.outcomePanel {
+  background-color: var(--panel);
+  background-image: repeating-linear-gradient(
+    0deg,
+    transparent 0,
+    transparent 4px,
+    rgba(255, 232, 214, 0.04) 5px
+  );
+  border: 1px solid rgba(86, 41, 19, 0.68);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 222, 198, 0.18),
+    inset 0 0 22px rgba(255, 184, 135, 0.08),
+    0 0 12px rgba(97, 34, 13, 0.1);
+  backdrop-filter: blur(9px) saturate(1.08);
+}
+
+.topBar::after,
+.forecast::after,
+.buildPalette::after,
+.humanMonitor::after,
+.toolbar::after,
+.factoryChain::after {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  border-top: 1px solid var(--radiation-line);
+  border-bottom: 1px solid rgba(255, 221, 197, 0.28);
+  clip-path: polygon(
+    0 0,
+    28% 0,
+    calc(28% + 5px) 4px,
+    calc(72% - 5px) 4px,
+    72% 0,
+    100% 0,
+    100% 100%,
+    72% 100%,
+    calc(72% - 5px) calc(100% - 4px),
+    calc(28% + 5px) calc(100% - 4px),
+    28% 100%,
+    0 100%
+  );
+  pointer-events: none;
+  opacity: 0.65;
+}
+
+/* 顶栏：SOL 与四种资源 */
+.topBar {
+  top: 86px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  padding: 8px 14px;
+  background-color: rgba(226, 85, 34, 0.24);
+}
+
+.solCell {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding-right: 12px;
+  border-right: 1px solid rgba(86, 41, 19, 0.5);
+}
+
+.solCell span {
+  font-size: 10px;
+}
+
+.solCell strong {
+  font-size: 19px;
+  line-height: 1.1;
+}
+
+.resourceCell {
+  min-width: 62px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 2px 8px;
+}
+
+.resourceCell span {
+  font-size: 11px;
+}
+
+.resourceCell strong {
+  font-size: 16px;
+  line-height: 1.2;
+}
+
+.resourceLow {
+  background: rgba(86, 41, 19, 0.64);
+  color: #ffe3d1;
+}
+
+/* 超级土豆格：全坑唯一的产出口，进度 + 养护质量同屏。
+   养护决定体积、体积决定收获量，两条必须一起看。 */
+.potatoCell {
+  min-width: 148px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  padding: 2px 10px;
+  border-left: 1px solid rgba(86, 41, 19, 0.5);
+}
+
+.potatoCell > span {
+  font-size: 11px;
+}
+
+.potatoCell > strong {
+  font-size: 15px;
+  line-height: 1.1;
+}
+
+.potatoEmpty {
+  color: #7c1d08;
+}
+
+.potatoCell small {
+  font-size: 10px;
+  opacity: 0.75;
+}
+
+/* 两条叠放的细条：上为生长进度，下为养护质量。 */
+.potatoBars {
+  position: relative;
+  height: 7px;
+  margin: 1px 0;
+  background: rgba(86, 41, 19, 0.24);
+}
+
+.potatoBars i,
+.potatoBars b {
+  position: absolute;
+  left: 0;
+  height: 3px;
+}
+
+.potatoBars i {
+  top: 0;
+  background: var(--ink);
+}
+
+.potatoBars b {
+  bottom: 0;
+  background: #7fa257;
+}
+
+.alertStrip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 12px;
+  border-left: 1px solid rgba(86, 41, 19, 0.5);
+  max-width: 300px;
+}
+
+.alertStrip b {
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.alertStorm {
+  color: #7c1d08;
+  animation: alert-blink 1.2s steps(2) infinite;
+}
+
+@keyframes alert-blink {
+  50% { opacity: 0.55; }
+}
+
+/* 订单栏：右侧 */
+.contracts {
+  top: 86px;
+  right: 18px;
+  width: 235px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.contractCard {
+  padding: 10px 12px;
+  background-color: rgba(224, 84, 34, 0.22);
+}
+
+.contractCard header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.contractCard header strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.contractCard header span {
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.deadlineNear {
+  color: #7c1d08;
+  font-weight: 700;
+}
+
+.contractProgress {
+  margin: 8px 0 6px;
+  height: 6px;
+  background: rgba(86, 41, 19, 0.28);
+  position: relative;
+}
+
+.contractProgress i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--ink);
+}
+
+.contractCard footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.contractCard footer small {
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.deliverButton {
+  border: 1px solid var(--ink);
+  background: var(--ink);
+  color: #ffe9da;
+  font-size: 12px;
+  padding: 4px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.deliverButton:disabled {
+  background: transparent;
+  color: var(--ink);
+  opacity: 0.55;
+  cursor: default;
+}
+
+.contractDone {
+  opacity: 0.65;
+}
+
+.contractDone header strong {
+  text-decoration: line-through;
+}
+
+/* 预测面板：左上，净速率与「还能撑几个 SOL」。
+   经营游戏的核心可读性 —— 玩家必须能规划而不是只能试错。 */
+.forecast {
+  top: 86px;
+  left: 18px;
+  width: 226px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  background-color: rgba(224, 84, 34, 0.17);
+}
+
+.rateRow {
+  display: grid;
+  grid-template-columns: 30px 1fr 42px;
+  grid-template-areas: 'label stock net' 'label hint hint';
+  align-items: baseline;
+  gap: 0 6px;
+  padding: 3px 0;
+}
+
+.rateRow + .rateRow {
+  border-top: 1px solid rgba(86, 41, 19, 0.28);
+}
+
+.rateRow span {
+  grid-area: label;
+  font-size: 11px;
+}
+
+.rateRow b {
+  grid-area: stock;
+  font-family: monospace;
+  font-size: 14px;
+}
+
+.rateRow i {
+  grid-area: net;
+  font-family: monospace;
+  font-size: 13px;
+  font-style: normal;
+  text-align: right;
+}
+
+.rateRow small {
+  grid-area: hint;
+  font-size: 10px;
+  opacity: 0.72;
+}
+
+.rateCritical {
+  color: #7c1d08;
+  font-weight: 600;
+}
+
+.rateCritical small {
+  opacity: 1;
+}
+
+/* 建造面板停靠左下，不再盖住坑底中央的土豆和生产线。 */
+.buildPalette {
+  left: 18px;
+  bottom: 22px;
+  width: 276px;
+  padding: 10px 12px;
+  background-color: var(--panel-strong);
+  z-index: 66;
+}
+
+.buildOptions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.buildOptions .toolButton {
+  width: 100%;
+  min-width: 0;
+}
+
+.buildTabs {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid rgba(86, 41, 19, 0.42);
+  padding-bottom: 7px;
+}
+
+.buildTabs button {
+  min-height: 30px;
+  border: 0;
+  border-right: 1px solid rgba(86, 41, 19, 0.35);
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.buildTabs button:last-child {
+  border-right: 0;
+}
+
+.buildTabs .buildTabActive {
+  background: var(--ink);
+  color: #ffe9da;
+}
+
+.contractFailed {
+  opacity: 0.6;
+  color: #7c1d08;
+}
+
+.contractFailed header strong {
+  text-decoration: line-through;
+}
+
+/* 右侧生命监测舱复用人体反馈阶段的外部骨骼白模。
+   它在经营阶段持续存在，让“种给谁吃”始终是工厂的可见目标。 */
+.humanMonitor {
+  right: 18px;
+  bottom: 154px;
+  width: 235px;
+  height: 246px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  padding: 9px;
+  background-color: rgba(217, 73, 27, 0.2);
+  overflow: hidden;
+}
+
+.humanMonitor::before {
+  content: '';
+  position: absolute;
+  inset: 5px;
+  border: 1px solid rgba(255, 222, 198, 0.42);
+  clip-path: polygon(
+    0 0,
+    24% 0,
+    27% 4px,
+    73% 4px,
+    76% 0,
+    100% 0,
+    100% 100%,
+    76% 100%,
+    73% calc(100% - 4px),
+    27% calc(100% - 4px),
+    24% 100%,
+    0 100%
+  );
+  pointer-events: none;
+}
+
+.humanMonitor header,
+.humanMonitor footer {
+  position: relative;
+  z-index: 3;
+}
+
+.humanMonitor header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 4px 7px;
+  border-bottom: 1px solid rgba(86, 41, 19, 0.46);
+}
+
+.humanMonitor header span,
+.humanMonitor header strong {
+  display: block;
+}
+
+.humanMonitor header span {
+  font-family: monospace;
+  font-size: 8px;
+  opacity: 0.68;
+}
+
+.humanMonitor header strong {
+  margin-top: 2px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.humanMonitor header i {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  background: var(--ink);
+  box-shadow: 0 0 8px rgba(255, 241, 224, 0.9);
+  animation: monitor-pulse 1.2s ease-in-out infinite;
+}
+
+.humanViewport {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+  background:
+    repeating-linear-gradient(
+      0deg,
+      transparent 0,
+      transparent 19px,
+      rgba(255, 238, 222, 0.13) 20px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      transparent 0,
+      transparent 19px,
+      rgba(86, 41, 19, 0.08) 20px
+    );
+  box-shadow: inset 0 0 24px rgba(91, 29, 10, 0.12);
+}
+
+.humanViewport > div:first-child {
+  position: absolute !important;
+  inset: 0;
+}
+
+.humanViewport > b {
+  position: absolute;
+  z-index: 4;
+  left: 12%;
+  right: 12%;
+  top: 80%;
+  height: 1px;
+  background: #fff4e5;
+  box-shadow:
+    0 0 8px rgba(255, 244, 229, 0.95),
+    0 -7px 16px rgba(255, 210, 178, 0.24);
+  animation: monitor-scan 2.4s ease-in-out infinite;
+}
+
+.humanViewport > span {
+  position: absolute;
+  z-index: 4;
+  right: 6px;
+  bottom: 5px;
+  padding: 2px 4px;
+  background: rgba(102, 36, 15, 0.46);
+  color: #ffe8d7;
+  font-family: monospace;
+  font-size: 8px;
+}
+
+.humanMonitor footer {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border-top: 1px solid rgba(86, 41, 19, 0.46);
+}
+
+.humanMonitor footer div {
+  min-width: 0;
+  padding: 6px 4px 1px;
+}
+
+.humanMonitor footer div + div {
+  border-left: 1px solid rgba(86, 41, 19, 0.32);
+}
+
+.humanMonitor footer span,
+.humanMonitor footer strong {
+  display: block;
+  text-align: center;
+}
+
+.humanMonitor footer span {
+  font-size: 8px;
+}
+
+.humanMonitor footer strong {
+  margin-top: 1px;
+  font-family: monospace;
+  font-size: 12px;
+}
+
+@keyframes monitor-scan {
+  0%, 100% { top: 86%; opacity: 0.35; }
+  50% { top: 13%; opacity: 1; }
+}
+
+@keyframes monitor-pulse {
+  50% { opacity: 0.35; }
+}
+
+/* 底部工具栏 */
+.toolbar {
+  left: 50%;
+  bottom: 22px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  padding: 10px 12px;
+  background-color: rgba(224, 84, 34, 0.22);
+}
+
+.toolButton {
+  min-width: 84px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid var(--ink);
+  background: rgba(255, 221, 197, 0.11);
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+}
+
+.toolButton strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.toolButton small {
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+.toolButton:hover,
+.toolButton:focus-visible {
+  background: rgba(86, 41, 19, 0.16);
+}
+
+.toolActive {
+  background: var(--ink);
+  color: #ffe9da;
+}
+
+.toolActive:hover,
+.toolActive:focus-visible {
+  background: var(--ink);
+}
+
+.toolButton:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.convertCell {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  padding-left: 10px;
+  border-left: 1px solid rgba(86, 41, 19, 0.5);
+}
+
+/* 日志行 */
+.logLine {
+  left: 50%;
+  bottom: 140px;
+  transform: translateX(-50%);
+  max-width: min(620px, 90vw);
+  padding: 6px 14px;
+  background: rgba(86, 41, 19, 0.78);
+  color: #ffe9da;
+  font-size: 12.5px;
+  line-height: 1.4;
+  text-align: center;
+  pointer-events: none;
+}
+
+/* 工具提示条：选中工具后告诉玩家下一步点哪里 */
+.toolHint {
+  left: 50%;
+  bottom: 100px;
+  transform: translateX(-50%);
+  max-width: min(640px, 90vw);
+  padding: 7px 16px;
+  background: rgba(255, 233, 218, 0.78);
+  border: 1px solid var(--ink);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+  text-align: center;
+  pointer-events: none;
+}
+
+/* 工厂链是当前局面的一句话读法。节点只显示是否建成、施工或停机，
+   细节仍由场景里的管线与设施动作承担。 */
+.factoryChain {
+  top: 194px;
+  left: 50%;
+  transform: translateX(-50%);
+  min-width: min(520px, 88vw);
+  padding: 8px 12px;
+  background-color: rgba(224, 84, 34, 0.17);
+  text-align: center;
+}
+
+.chainSteps {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 5px;
+}
+
+.chainNode {
+  min-width: 48px;
+  padding: 4px 7px;
+  border: 1px solid rgba(86, 41, 19, 0.45);
+  color: rgba(86, 41, 19, 0.66);
+  font-size: 11px;
+}
+
+.chainRunning {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: #ffe9da;
+}
+
+.chainBuilding {
+  border-style: dashed;
+  color: var(--ink);
+  animation: construction-pulse 1.2s ease-in-out infinite;
+}
+
+.chainStopped {
+  border-color: #7c1d08;
+  color: #7c1d08;
+}
+
+.chainArrow {
+  color: rgba(86, 41, 19, 0.7);
+  font-style: normal;
+}
+
+.bottleneck {
+  display: block;
+  margin-top: 5px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+@keyframes construction-pulse {
+  50% { background: rgba(255, 233, 218, 0.35); }
+}
+
+/* 结算遮罩 */
+.outcomeOverlay {
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(56, 22, 8, 0.62);
+  backdrop-filter: blur(6px);
+  z-index: 80;
+}
+
+.outcomePanel {
+  width: min(430px, 86vw);
+  padding: 28px 30px;
+  background-color: rgba(229, 91, 40, 0.72);
+  text-align: center;
+}
+
+.outcomePanel strong {
+  display: block;
+  font-size: 24px;
+  margin-bottom: 10px;
+}
+
+.outcomePanel p {
+  font-size: 13px;
+  line-height: 1.6;
+  margin: 0 0 18px;
+}
+
+.outcomePanel button {
+  border: 1px solid var(--ink);
+  background: var(--ink);
+  color: #ffe9da;
+  font-size: 14px;
+  padding: 8px 22px;
+  cursor: pointer;
+}
+
+@media (max-width: 900px) {
+  .contracts {
+    top: 86px;
+    bottom: auto;
+    right: 12px;
+    width: 200px;
+  }
+
+  .humanMonitor {
+    right: 12px;
+    bottom: 174px;
+    width: 200px;
+    height: 224px;
+  }
+
+  .forecast {
+    top: auto;
+    bottom: 188px;
+    left: 12px;
+    width: 176px;
+  }
+
+  .topBar {
+    flex-wrap: wrap;
+    max-width: 92vw;
+  }
+
+  .factoryChain {
+    top: auto;
+    bottom: 198px;
+    min-width: min(470px, 92vw);
+  }
+
+  .buildPalette {
+    top: 226px;
+    bottom: auto;
+    left: 12px;
+    transform: none;
+    width: min(276px, calc(100vw - 24px));
+    max-height: calc(100vh - 340px);
+    overflow-y: auto;
+  }
+
+  .buildOptions {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* GameHUD 有这条全局焦点环，FarmHUD 漏掉了。工具栏与建造面板
+   现在有十几个按钮，键盘导航必须能看见焦点在哪。 */
+.hud :is(button, [tabindex]):focus-visible {
+  outline: 2px solid #7a2d10;
+  outline-offset: 2px;
+}
+
+.hud button {
+  min-height: 40px;
+  border-radius: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* FarmHUD 只屏蔽了 .alertStorm，新增的面板过渡会继续动。
+     按 GameHUD 的做法整体屏蔽。 */
+  .hud,
+  .hud * {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
